@@ -141,31 +141,31 @@ export default function OperatorTimePage() {
           <p><strong>Status:</strong> {selectedComponent.currentStatus}</p>
           <p><strong>Design:</strong> <a className="text-blue-600 underline" href={selectedComponent.designUrl} target="_blank">View Drawing</a></p>
 
-          {selectedComponent.partList?.length > 0 && (
-            <div>
-              <h3 className="font-semibold mt-4 mb-2">Assembly Part List</h3>
-              <table className="w-full text-sm border">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="p-1 border">Label</th>
-                    <th className="p-1 border">Size</th>
-                    <th className="p-1 border">Count</th>
-                    <th className="p-1 border">Cut Length</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedComponent.partList.map((part) => (
-                    <tr key={part.id}>
-                      <td className="p-1 border">{part.label}</td>
-                      <td className="p-1 border">{part.size}</td>
-                      <td className="p-1 border">{part.count}</td>
-                      <td className="p-1 border">{part.cutLength}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+{selectedComponent?.partList && selectedComponent.partList.length > 0 && (
+  <div>
+    <h3 className="font-semibold mt-4 mb-2">Assembly Part List</h3>
+    <table className="w-full text-sm border">
+      <thead>
+        <tr className="bg-gray-100">
+          <th className="p-1 border">Label</th>
+          <th className="p-1 border">Size</th>
+          <th className="p-1 border">Count</th>
+          <th className="p-1 border">Cut Length</th>
+        </tr>
+      </thead>
+      <tbody>
+        {selectedComponent.partList.map((part: Part) => (
+          <tr key={part.id}>
+            <td className="p-1 border">{part.label}</td>
+            <td className="p-1 border">{part.size}</td>
+            <td className="p-1 border">{part.count}</td>
+            <td className="p-1 border">{part.cutLength}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
 
           {selectedComponent.sheathing && (
             <div>
