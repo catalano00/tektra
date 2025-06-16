@@ -2,20 +2,49 @@
 
 import { useEffect, useState } from 'react'
 
+interface Project {
+  id: string
+  name: string
+}
+
+interface Part {
+  id: string
+  label: string
+  size: string
+  count: number
+  cutLength: string
+}
+
+interface Sheathing {
+  panelArea: string
+  panelCount: number
+}
+
+interface Component {
+  id: string
+  componentType: string
+  currentStatus: string
+  designUrl: string
+  partList?: Part[]
+  sheathing?: Sheathing
+}
+
 export default function OperatorTimePage() {
-  const [projects, setProjects] = useState([])
-  const [components, setComponents] = useState([])
-  const [selectedProject, setSelectedProject] = useState('')
-  const [selectedComponent, setSelectedComponent] = useState(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const [time, setTime] = useState(0)
-  const [warehouse, setWarehouse] = useState('')
-  const [workstation, setWorkstation] = useState('')
-  const [teamLead, setTeamLead] = useState('')
-  const [process, setProcess] = useState('')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [components, setComponents] = useState<Component[]>([])
+  const [selectedProject, setSelectedProject] = useState<string>('')
+  const [selectedComponent, setSelectedComponent] = useState<Component | null>(null)
+  const [isRunning, setIsRunning] = useState<boolean>(false)
+  const [time, setTime] = useState<number>(0)
+  const [warehouse, setWarehouse] = useState<string>('')
+  const [workstation, setWorkstation] = useState<string>('')
+  const [teamLead, setTeamLead] = useState<string>('')
+  const [process, setProcess] = useState<string>('')
 
   useEffect(() => {
-    fetch('/api/projects').then((res) => res.json()).then(setProjects)
+    fetch('/api/projects')
+      .then((res) => res.json())
+      .then(setProjects)
   }, [])
 
   useEffect(() => {
@@ -29,15 +58,17 @@ export default function OperatorTimePage() {
   }, [selectedProject])
 
   useEffect(() => {
-    let interval: any = null
+    let interval: NodeJS.Timeout | null = null
     if (isRunning) {
       interval = setInterval(() => {
         setTime((prev) => prev + 1)
       }, 1000)
-    } else {
+    } else if (interval) {
       clearInterval(interval)
     }
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [isRunning])
 
   const formatTime = (seconds: number) => {
@@ -48,6 +79,8 @@ export default function OperatorTimePage() {
 
   const handleStop = async () => {
     setIsRunning(false)
+
+    if (!selectedComponent) return
 
     await fetch('/api/time-entry', {
       method: 'POST',
@@ -88,8 +121,8 @@ export default function OperatorTimePage() {
           className="border p-2 rounded w-1/2"
           value={selectedComponent?.id || ''}
           onChange={(e) => {
-            const comp = components.find((c) => c.id === e.target.value)
-            setSelectedComponent(comp || null)
+            const comp = components.find((c) => c.id === e.target.value) || null
+            setSelectedComponent(comp)
             setTime(0)
             setIsRunning(false)
           }}
@@ -108,7 +141,6 @@ export default function OperatorTimePage() {
           <p><strong>Status:</strong> {selectedComponent.currentStatus}</p>
           <p><strong>Design:</strong> <a className="text-blue-600 underline" href={selectedComponent.designUrl} target="_blank">View Drawing</a></p>
 
-          {/* Part List */}
           {selectedComponent.partList?.length > 0 && (
             <div>
               <h3 className="font-semibold mt-4 mb-2">Assembly Part List</h3>
@@ -122,7 +154,7 @@ export default function OperatorTimePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedComponent.partList.map((part: any) => (
+                  {selectedComponent.partList.map((part) => (
                     <tr key={part.id}>
                       <td className="p-1 border">{part.label}</td>
                       <td className="p-1 border">{part.size}</td>
@@ -135,7 +167,6 @@ export default function OperatorTimePage() {
             </div>
           )}
 
-          {/* Sheathing Schedule */}
           {selectedComponent.sheathing && (
             <div>
               <h3 className="font-semibold mt-4 mb-2">Sheathing Schedule</h3>
