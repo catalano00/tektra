@@ -2,9 +2,21 @@
 
 import { useEffect, useState } from 'react'
 
+type Component = {
+  id: string
+  componentType: string
+  currentStatus: string
+  designUrl: string
+}
+
+type Project = {
+  id: string
+  name: string
+}
+
 export default function ComponentBrowserPage() {
-  const [projects, setProjects] = useState([])
-  const [components, setComponents] = useState([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [components, setComponents] = useState<Component[]>([])
   const [selectedProject, setSelectedProject] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -12,14 +24,14 @@ export default function ComponentBrowserPage() {
   useEffect(() => {
     fetch('/api/projects')
       .then((res) => res.json())
-      .then(setProjects)
+      .then((data: Project[]) => setProjects(data))
   }, [])
 
   useEffect(() => {
     if (selectedProject) {
       fetch(`/api/components?projectId=${selectedProject}`)
         .then((res) => res.json())
-        .then(setComponents)
+        .then((data: Component[]) => setComponents(data))
     }
   }, [selectedProject])
 
@@ -84,6 +96,7 @@ export default function ComponentBrowserPage() {
                 href={comp.designUrl}
                 className="text-blue-600 underline"
                 target="_blank"
+                rel="noopener noreferrer"
               >
                 View PDF
               </a>
