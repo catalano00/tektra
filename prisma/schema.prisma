@@ -22,6 +22,12 @@ enum Process {
   Ship
 }
 
+enum Status {
+  pending
+  complete
+  paused
+}
+
 model TimeEntry {
   id          String    @id @default(cuid())
   componentId String
@@ -30,20 +36,29 @@ model TimeEntry {
   workstation String
   teamLead    String
   process     Process
+  status      Status    // NEW: pending or complete
   duration    Float     // in minutes
   createdAt   DateTime  @default(now())
 }
 
 model Component {
-  id              String            @id
-  componentType   String
-  currentStatus   String
-  designUrl       String?
-  projectId       String
-  project         Project           @relation(fields: [projectId], references: [id])
-  partList        Part[]            // Assembly parts
-  sheathing       Sheathing?        // Sheathing schedule
-  timeEntries     TimeEntry[]
+  id                  String       @id
+  componentType       String
+  currentStatus       String
+  lastCompletedProcess String?     // NEW: last completed operation (e.g., "Cut")
+  nextProcess         String?      // NEW: the next operation to be performed
+  processStatus       String?      // NEW: text summary like "In Production (Cut)"
+  percentComplete     Int?         // NEW: percent of total process complete
+  totalCycleTime      Float?       // NEW: total time in minutes for all complete entries
+  completedAt         DateTime?    // when marked complete
+  designUrl           String?
+  workstation         String?      // NEW: last used workstation
+  teamLead            String?      // NEW: last team lead
+  projectId           String
+  project             Project      @relation(fields: [projectId], references: [id])
+  partList            Part[]       // Assembly parts
+  sheathing           Sheathing?   // Sheathing schedule
+  timeEntries         TimeEntry[]
 }
 
 model Part {

@@ -1,3 +1,5 @@
+// /app/api/components/route.ts
+
 import { PrismaClient } from '@prisma/client'
 import { NextResponse } from 'next/server'
 
@@ -11,12 +13,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Missing projectId' }, { status: 400 })
   }
 
- const components = await prisma.component.findMany({
-  where: { projectId },
-  include: {
-    partList: true,
-    sheathing: true,
-  },
-})
+  const components = await prisma.component.findMany({
+    where: { projectId },
+    include: {
+      partList: true,
+      sheathing: true,
+      project: { select: { name: true } }
+    },
+    orderBy: { id: 'asc' },
+  })
+
   return NextResponse.json(components)
 }
