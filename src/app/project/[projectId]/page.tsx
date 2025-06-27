@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { formatAddress, formatMinutesAndSeconds, formatTime } from '@/utils/format';
+import { useParams, useRouter} from 'next/navigation'
+import { formatAddress, formatTime } from '@/utils/format';
 
 interface TimeEntry {
   status: string

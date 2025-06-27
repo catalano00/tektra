@@ -22,6 +22,6 @@ export interface Component {
   componentsqft: number;
   percentComplete: number;
   timeEntries?: TimeEntry[];
-  partList?: any[]; // Replace 'any' with your real Part type if needed
-  sheathing?: any[]; // Replace 'any' with your real Sheathing type if needed
+  partList?: [];
+  sheathing?: [];
 }

@@ -1,12 +1,11 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Plus, LayoutDashboard, Clock, Building2, TimerReset, CheckCircle, Users2 } from 'lucide-react'
+import { LayoutDashboard, Clock, Building2, TimerReset, CheckCircle, Users2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Switch } from '@/components/ui/switch'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatTime } from '@/utils/format'
 
 interface Project {

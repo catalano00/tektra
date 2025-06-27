@@ -26,7 +26,7 @@ export async function PUT(req: Request) {
   try {
     const body = await req.json();
 
-    let {
+    const {
       componentId,
       componentCode,
       process,
