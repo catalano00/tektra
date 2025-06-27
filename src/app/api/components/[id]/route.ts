@@ -46,7 +46,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         nextProcess: body.nextProcess ?? undefined,
         processStatus: body.processStatus ?? undefined,
         percentComplete: body.percentComplete ?? undefined,
-        totalCycleTime: body.totalCycleTime ?? undefined,
+        //totalCycleTime: body.totalCycleTime ?? undefined,
         workstation: body.workstation ?? undefined,
         teamLead: body.teamLead ?? undefined,
 },
