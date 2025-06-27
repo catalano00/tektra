@@ -1,35 +1,35 @@
 // /app/api/components/[id]/route.ts
 
 import { prisma } from '@/lib/prisma'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest) {
   try {
+    const id = req.nextUrl.pathname.split('/').pop()
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing component ID' }, { status: 400 })
+    }
+
     const component = await prisma.component.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         project: true,
         partList: true,
         sheathing: true,
         timeEntries: true,
       },
-    });
+    })
 
     if (!component) {
-      return NextResponse.json({ error: 'Component not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Component not found' }, { status: 404 })
     }
 
-    // Convert id → componentId and remove id from the response
-    const { id, ...rest } = component;
-    const formattedComponent = {
-      ...rest,
-      componentId: id,
-    };
-
-    return NextResponse.json(formattedComponent);
+    const { id: componentId, ...rest } = component
+    return NextResponse.json({ ...rest, componentId })
   } catch (err) {
-    console.error('[COMPONENT GET ERROR]', err);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error('[COMPONENT GET ERROR]', err)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
