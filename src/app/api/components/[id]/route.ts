@@ -33,12 +33,18 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request) {
   try {
-    const body = await req.json();
+    const id = req.url?.split('/').pop()
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing component ID' }, { status: 400 })
+    }
+
+    const body = await req.json()
 
     const updated = await prisma.component.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         currentStatus: body.currentStatus,
         completedAt: body.completedAt ?? undefined,
@@ -46,22 +52,16 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         nextProcess: body.nextProcess ?? undefined,
         processStatus: body.processStatus ?? undefined,
         percentComplete: body.percentComplete ?? undefined,
-        //totalCycleTime: body.totalCycleTime ?? undefined,
         workstation: body.workstation ?? undefined,
         teamLead: body.teamLead ?? undefined,
-},
-    });
+        // remove totalCycleTime here unless it’s actually in your schema
+      },
+    })
 
-    // Ensure consistent format on response too
-    const { id, ...rest } = updated;
-    const formattedUpdated = {
-      ...rest,
-      componentId: id,
-    };
-
-    return NextResponse.json(formattedUpdated);
+    const { id: componentId, ...rest } = updated
+    return NextResponse.json({ ...rest, componentId })
   } catch (err) {
-    console.error('[COMPONENT PUT ERROR]', err);
-    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 });
+    console.error('[COMPONENT PUT ERROR]', err)
+    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 })
   }
 }
