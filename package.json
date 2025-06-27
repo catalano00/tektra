@@ -6,17 +6,29 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:components": "ts-node --project tsconfig.seed.json prisma/seedComponents.ts",
+    "seed:projects": "ts-node --project tsconfig.seed.json prisma/seedProjects.ts",
+    "seed:crosscheck": "ts-node --project tsconfig.seed.json prisma/crosscheck_project_ids.ts"
   },
   "dependencies": {
     "@eslint/eslintrc": "^3",
     "@headlessui/react": "^2.2.4",
+    "@prisma/client": "^6.10.1",
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.5",
+    "@radix-ui/react-tooltip": "^1.2.7",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
     "axios": "^1.10.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "css": "^3.0.0",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.5.0",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
@@ -26,8 +38,16 @@
     "postcss": "^8.5.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-hot-toast": "^2.5.2",
+    "react-toastify": "^11.0.5",
     "recharts": "^2.15.3",
+    "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5"
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "prisma": "^6.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   }
 }

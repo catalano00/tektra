@@ -1,22 +1,31 @@
-import { PrismaClient } from '@prisma/client'
-import { NextResponse } from 'next/server'
+// /app/api/projects/route.ts
 
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
-  const projects = await prisma.project.findMany()
-  return NextResponse.json(projects)
-}
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const filter = searchParams.get('filter') || 'active';
 
-export async function POST(req: Request) {
-  const body = await req.json()
+    const projects = await prisma.project.findMany({
+      where: filter === 'all' ? {} : {
+        currentStatus: {
+          in: ['Planned', 'In Production']
+        }
+      },
+      select: {
+        projectId: true,
+        currentStatus: true,
+      },
+      orderBy: {
+        projectId: 'asc',
+      },
+    });
 
-  const created = await prisma.project.create({
-    data: {
-      name: body.name,
-      client: body.client,
-    },
-  })
-
-  return NextResponse.json(created)
+    return NextResponse.json(projects);
+  } catch (err) {
+    console.error('[PROJECTS GET ERROR]', err);
+    return NextResponse.json({ error: 'Failed to load projects' }, { status: 500 });
+  }
 }

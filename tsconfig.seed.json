@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "noEmit": true
+  },
+  "include": [
+    "prisma/seedComponents.ts",
+    "prisma/seedProjects.ts",
+    "prisma/crosscheck_project_ids.ts"
+  ]
+}

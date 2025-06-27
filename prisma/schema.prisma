@@ -9,10 +9,84 @@ datasource db {
 }
 
 model Project {
-  id        String      @id @default(cuid())
-  name      String      @unique
-  client    String
-  components Component[]
+  currentStatus                String
+  projectId                    String      @id
+  client                       String
+  streetaddress                String
+  city                         String
+  state                        String
+  zipcode                      Int
+  contractAmount               Decimal     @db.Decimal(15, 2)
+  contingency                  Decimal     @db.Decimal(15, 2)
+  totalContract                Decimal     @db.Decimal(15, 2)
+  buildableSqFt                Int?
+  estimatedPanelSqFt           Int?
+  expectedDrawingStart         DateTime?
+  expectedProductionStart      DateTime?
+  expectedProductionCompletion DateTime?
+  notes                        String?
+  updatedAt                    DateTime? @updatedAt @default (now())
+  components                   Component[]
+
+  @@map("projects")
+}
+
+model TimeEntry {
+  id            String    @id @default(cuid())
+  componentId   String
+  componentCode String
+  warehouse     String
+  workstation   String
+  teamLead      String
+  process       Process
+  status        Status
+  duration      Int
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  component     Component @relation(fields: [componentId], references: [id])
+
+  @@unique([componentId, process])
+}
+
+model Component {
+  id                   String      @id @default(uuid())
+  componentId          String
+  componentType        String
+  currentStatus        String
+  lastCompletedProcess String?
+  nextProcess          String?
+  processStatus        String?
+  percentComplete      Int?
+  completedAt          DateTime?
+  designUrl            String?
+  workstation          String?
+  teamLead             String?
+  dateshipped          DateTime?
+  datedelivered        DateTime?
+  componentsqft        Int
+  projectId            String
+  project              Project     @relation(fields: [projectId], references: [projectId])
+  partList             Part[]
+  sheathing            Sheathing?
+  timeEntries          TimeEntry[]
+}
+
+model Part {
+  id          String    @id @default(cuid())
+  componentId String
+  label       String
+  size        String
+  count       Int
+  cutLength   String
+  component   Component @relation(fields: [componentId], references: [id])
+}
+
+model Sheathing {
+  id          String    @id @default(cuid())
+  componentId String    @unique
+  panelArea   String
+  panelCount  Float
+  component   Component @relation(fields: [componentId], references: [id])
 }
 
 enum Process {
@@ -26,55 +100,4 @@ enum Status {
   pending
   complete
   paused
-}
-
-model TimeEntry {
-  id          String    @id @default(cuid())
-  componentId String
-  component   Component @relation(fields: [componentId], references: [id])
-  warehouse   String
-  workstation String
-  teamLead    String
-  process     Process
-  status      Status    // NEW: pending or complete
-  duration    Float     // in minutes
-  createdAt   DateTime  @default(now())
-}
-
-model Component {
-  id                  String       @id
-  componentType       String
-  currentStatus       String
-  lastCompletedProcess String?     // NEW: last completed operation (e.g., "Cut")
-  nextProcess         String?      // NEW: the next operation to be performed
-  processStatus       String?      // NEW: text summary like "In Production (Cut)"
-  percentComplete     Int?         // NEW: percent of total process complete
-  totalCycleTime      Float?       // NEW: total time in minutes for all complete entries
-  completedAt         DateTime?    // when marked complete
-  designUrl           String?
-  workstation         String?      // NEW: last used workstation
-  teamLead            String?      // NEW: last team lead
-  projectId           String
-  project             Project      @relation(fields: [projectId], references: [id])
-  partList            Part[]       // Assembly parts
-  sheathing           Sheathing?   // Sheathing schedule
-  timeEntries         TimeEntry[]
-}
-
-model Part {
-  id           String   @id @default(cuid())
-  componentId  String
-  component    Component @relation(fields: [componentId], references: [id])
-  label        String
-  size         String
-  count        Int
-  cutLength    String
-}
-
-model Sheathing {
-  id           String   @id @default(cuid())
-  componentId  String   @unique
-  component    Component @relation(fields: [componentId], references: [id])
-  panelArea    String
-  panelCount   Float
 }

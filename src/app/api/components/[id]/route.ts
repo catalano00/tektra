@@ -13,34 +13,55 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         sheathing: true,
         timeEntries: true,
       },
-    })
+    });
 
     if (!component) {
-      return NextResponse.json({ error: 'Component not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Component not found' }, { status: 404 });
     }
 
-    return NextResponse.json(component)
+    // Convert id → componentId and remove id from the response
+    const { id, ...rest } = component;
+    const formattedComponent = {
+      ...rest,
+      componentId: id,
+    };
+
+    return NextResponse.json(formattedComponent);
   } catch (err) {
-    console.error('[COMPONENT GET ERROR]', err)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    console.error('[COMPONENT GET ERROR]', err);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
-    const body = await req.json()
+    const body = await req.json();
 
     const updated = await prisma.component.update({
       where: { id: params.id },
       data: {
         currentStatus: body.currentStatus,
         completedAt: body.completedAt ?? undefined,
-      },
-    })
+        lastCompletedProcess: body.lastCompletedProcess ?? undefined,
+        nextProcess: body.nextProcess ?? undefined,
+        processStatus: body.processStatus ?? undefined,
+        percentComplete: body.percentComplete ?? undefined,
+        totalCycleTime: body.totalCycleTime ?? undefined,
+        workstation: body.workstation ?? undefined,
+        teamLead: body.teamLead ?? undefined,
+},
+    });
 
-    return NextResponse.json(updated)
+    // Ensure consistent format on response too
+    const { id, ...rest } = updated;
+    const formattedUpdated = {
+      ...rest,
+      componentId: id,
+    };
+
+    return NextResponse.json(formattedUpdated);
   } catch (err) {
-    console.error('[COMPONENT PUT ERROR]', err)
-    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 })
+    console.error('[COMPONENT PUT ERROR]', err);
+    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 });
   }
 }
