@@ -5,13 +5,13 @@ import { Dialog, Transition } from '@headlessui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { formatTime } from '@/utils/format';
-import type { Component as PrismaComponent, TimeEntry, Part, Sheathing } from '@prisma/client';
+import type { Component, TimeEntry, Part, Sheathing } from '@prisma/client';
 
 interface Project {
   projectId: string;
 }
 
-interface ComponentExtended extends PrismaComponent {
+interface ComponentExtended extends Component {
   timeEntries?: TimeEntry[];
   partList?: Part[];
   sheathing?: Sheathing[];
@@ -44,7 +44,6 @@ export default function OperatorTimePage() {
   const [process, setProcess] = useState<ProcessType | ''>('');
   const [availableProcesses, setAvailableProcesses] = useState<ProcessType[]>([]);
   const [showModal, setShowModal] = useState(false);
-
   const panelIdParam = searchParams?.get('componentId') ?? '';
   const projectIdParam = searchParams?.get('projectId') ?? '';
   const processParamRaw = searchParams?.get('process') ?? '';
@@ -261,19 +260,21 @@ if (action === 'complete') {
 
             <select
               className="border p-2 rounded w-1/2"
-              value={selectedComponent?.componentId || ''}
+              value={selectedComponent?.componentId ?? ''}
               onChange={(e) => {
-                const comp = components.find((c: PrismaComponent) => c.componentId === e.target.value);
+                const comp: ComponentExtended | undefined = components.find(
+                  (c) => c.componentId === e.target.value
+                );
                 setSelectedComponent(comp || null);
               }}
               disabled={!selectedProject}
             >
               <option value="">Select Component</option>
-             {components.map((c: PrismaComponent) => (
-              <option key={c.componentId} value={c.componentId}>
-                {c.componentId}
-              </option>
-              ))}
+              {components.map((c: ComponentExtended) => (
+            <option key={c.componentId} value={c.componentId}>
+              {c.componentId}
+            </option>
+          ))}
             </select>
           </div>
         </div>

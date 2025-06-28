@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 type Component = {
-  id: string
+  componentId: string
   componentType: string
   currentStatus: string
   designUrl: string
@@ -72,22 +72,23 @@ export default function ComponentBrowserPage() {
           <option>Floor</option>
         </select>
 
-        <select
+       <select
           className="border p-2 rounded"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
-          <option value="">All Statuses</option>
-          <option>Planned</option>
-          <option>Released for Manufacturing</option>
-          <option>Used</option>
-          <option>Scrapped</option>
+          <option key="all" value="">All Statuses</option>
+          {['Planned', 'Released for Manufacturing', 'Used', 'Scrapped'].map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
         </select>
       </div>
 
       <div className="grid gap-4">
         {filteredComponents.map((comp) => (
-          <div key={comp.id} className="border p-4 rounded bg-white shadow">
+          <div key={comp.componentId} className="border p-4 rounded bg-white shadow">
             <div className="font-semibold">{comp.componentType}</div>
             <div className="text-sm text-gray-500">Status: {comp.currentStatus}</div>
             <div className="text-sm">
