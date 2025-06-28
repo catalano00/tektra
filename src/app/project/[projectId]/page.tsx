@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter} from 'next/navigation'
-import { formatAddress, formatTime } from '@/utils/format';
+import { formatAddress, formatTime, formatDate } from '@/utils/format';
 
 interface TimeEntry {
   status: string

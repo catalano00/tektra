@@ -78,7 +78,7 @@ export default function OperatorTimePage() {
         setComponents(filtered);
 
         if (panelIdParam) {
-          const match = filtered.find((c) => c.componentId === panelIdParam);
+          const match = filtered.find((c: { componentId: string }) => c.componentId === panelIdParam);
           if (match) setSelectedComponent(match);
         }
       })
@@ -190,29 +190,32 @@ export default function OperatorTimePage() {
       return;
     }
 
+    const isLastProcess = process === OPERATION_ORDER[OPERATION_ORDER.length - 1];
 
-    if (action === 'complete' && process !== 'Ship') {
-      const postRes = await fetch('/api/time-entry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          componentId: selectedComponent.id,
-          componentCode: selectedComponent.componentId,
-          currentProcess: process,
-          teamLead,
-          workstation,
-          warehouse: 'Grand Junction',
-        }),
-      });
+if (action === 'complete') {
+  if (!isLastProcess) {
+    const postRes = await fetch('/api/time-entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        componentId: selectedComponent.id,
+        componentCode: selectedComponent.componentId,
+        currentProcess: process,
+        teamLead,
+        workstation,
+        warehouse: 'Grand Junction',
+      }),
+    });
 
-      if (process === 'Ship' || postRes.status === 204) {
-        toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
-      } else if (!postRes.ok) {
-        console.error('Failed to create next time entry:', await postRes.text());
-        alert('Saved, but failed to start the next process.');
-      }
+    if (postRes.status === 204) {
+      toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
+    } else if (!postRes.ok) {
+      console.error('Failed to create next time entry:', await postRes.text());
     }
-
+  } else {
+    toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
+  }
+}
     router.push(`/project/${selectedProject}`);
   };
 
@@ -221,7 +224,7 @@ export default function OperatorTimePage() {
   const progress = currentIndex >= 0
     ? Math.floor(((currentIndex) / OPERATION_ORDER.length) * 100)
     : 0;
-
+  
     return(
       <main className="p-6 max-w-2xl mx-auto space-y-4">
         <h1 className="text-2xl font-bold">Operator Panel</h1>
