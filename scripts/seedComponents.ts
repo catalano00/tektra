@@ -5,7 +5,7 @@ import csv from 'csv-parser';
 
 const prisma = new PrismaClient();
 
-async function seedComponentsFromCSV() {
+export async function seedComponentsFromCSV() {
   const filePath = path.join(__dirname, 'seedComponents.csv');
   const components: any[] = [];
 
@@ -49,10 +49,3 @@ async function seedComponentsFromCSV() {
 
   console.log(`🎉 Done. ${created} components created.`);
 }
-
-seedComponentsFromCSV()
-  .catch((e) => {
-    console.error('❌ Error:', e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());

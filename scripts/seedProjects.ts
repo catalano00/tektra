@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-async function main() {
+export async function seedProjects() {
   const projects = [
     { projectId: `TEK-002-GAMMILL`, currentStatus: "Complete", client: `Peak3 LTD`, streetaddress: `567 Saddleback Rd`, city: `Carbondale`, state: `CO`, zipcode: 81623, contractAmount: 1097392.61, contingency: 109739.26, totalContract: 1207131.87 },
     { projectId: `TEK-004-BURGHER325HLND`, currentStatus: "Complete", client: `Peak3 LTD`, streetaddress: `325 Holland Hills Rd`, city: `Basalt`, state: `CO`, zipcode: 81621, contractAmount: 1808969.44, contingency: 180896.94, totalContract: 1989866.38 },
@@ -27,11 +27,3 @@ async function main() {
     await prisma.project.create({ data })
   }
 }
-
-main()
-  .then(() => console.log("✅ Seed complete."))
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(() => prisma.$disconnect())

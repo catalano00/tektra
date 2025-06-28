@@ -5,7 +5,7 @@ import csv from 'csv-parser';
 
 const prisma = new PrismaClient();
 
-async function seedTimeEntriesFromCSV() {
+export async function seedLegacyTimeEntries() {
   const filePath = path.join(__dirname, 'TimeEntry.csv');
   const entries: any[] = [];
 
@@ -22,6 +22,7 @@ async function seedTimeEntriesFromCSV() {
   for (const row of entries) {
     const {
       componentId,
+      componentCode,
       warehouse,
       workstation,
       teamLead,
@@ -44,6 +45,7 @@ async function seedTimeEntriesFromCSV() {
     await prisma.timeEntry.create({
       data: {
         componentId: component.id,
+        componentCode,
         warehouse,
         workstation: workstation || null,
         teamLead: teamLead || null,
@@ -62,7 +64,7 @@ async function seedTimeEntriesFromCSV() {
   console.log(`🎉 Done. ${created} time entries created.`);
 }
 
-seedTimeEntriesFromCSV()
+seedLegacyTimeEntries()
   .catch((e) => {
     console.error('❌ Error:', e);
     process.exit(1);
