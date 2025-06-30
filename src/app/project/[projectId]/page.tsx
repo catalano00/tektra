@@ -137,7 +137,7 @@ export default function ProjectPage() {
         )}
       </div>
       <div className="flex flex-col items-end gap-2">
-        <label htmlFor="statusFilter" className="text-sm font-medium text-gray-700">
+        <label htmlFor="statusFilter" className="text-sm font-small text-gray-700">
           Filter Components
         </label>
         <select

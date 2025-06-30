@@ -5,13 +5,19 @@ import { Dialog, Transition } from '@headlessui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { formatTime } from '@/utils/format';
-import type { Component, TimeEntry, Part, Sheathing } from '@prisma/client';
+import type { TimeEntry, Part, Sheathing } from '@prisma/client';
 
 interface Project {
   projectId: string;
 }
 
-interface ComponentExtended extends Component {
+interface ComponentExtended {
+  id: string;
+  projectId: string;
+  componentId: string;
+  componentType: string;
+  currentStatus: string;
+  componentsqft?: number;
   timeEntries?: TimeEntry[];
   partList?: Part[];
   sheathing?: Sheathing[];
@@ -61,28 +67,28 @@ export default function OperatorTimePage() {
     if (projectIdParam) setSelectedProject(projectIdParam);
   }, [projectIdParam]);
 
-  useEffect(() => {
-    if (!selectedProject) return;
+    useEffect(() => {
+      if (!selectedProject) return;
 
-    fetch(`/api/components?projectId=${selectedProject}`)
-      .then(res => res.json())
-      .then((data) => {
-        const filtered = (data.components || []).filter((c: ComponentExtended) => {
-          const isDelivered = c.currentStatus.toLowerCase().includes('delivered');
-          const isShipped = c.currentStatus.toLowerCase().includes('shipped');
-          const last = c.timeEntries?.filter(e => e.status === 'complete').at(-1)?.process;
-          return !isDelivered && !isShipped && last !== 'Ship';
-        });
+      fetch(`/api/components?projectId=${selectedProject}`)
+        .then(res => res.json())
+        .then((data: { components: ComponentExtended[] }) => {
+          const filtered = data.components.filter(c => {
+            const isDelivered = c.currentStatus.toLowerCase().includes('delivered');
+            const isShipped = c.currentStatus.toLowerCase().includes('shipped');
+            const last = c.timeEntries?.filter(e => e.status === 'complete').at(-1)?.process;
+            return !isDelivered && !isShipped && last !== 'Ship';
+          });
 
-        setComponents(filtered);
+          setComponents(filtered);
 
-        if (panelIdParam) {
-          const match = filtered.find((c: { componentId: string }) => c.componentId === panelIdParam);
-          if (match) setSelectedComponent(match);
-        }
-      })
-      .catch(console.error);
-  }, [selectedProject]);
+          if (panelIdParam) {
+            const match = filtered.find(c => c.componentId === panelIdParam);
+            if (match) setSelectedComponent(match);
+          }
+        })
+        .catch(console.error);
+    }, [selectedProject]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -260,7 +266,6 @@ if (action === 'complete') {
 
             <select
               className="border p-2 rounded w-1/2"
-              value={selectedComponent?.componentId ?? ''}
               onChange={(e) => {
                 const comp: ComponentExtended | undefined = components.find(
                   (c) => c.componentId === e.target.value
@@ -282,7 +287,7 @@ if (action === 'complete') {
 
         {selectedComponent && (
           <div className="p-4 border rounded bg-white shadow space-y-4">
-            <button onClick={() => router.push('/operator-time')} className="text-sm text-blue-600 underline">Change Selection</button>
+            <button onClick={() => router.push('/project-summaries')} className="text-sm text-blue-600 underline">Change Selection</button>
             <h1 className="text-2xl font-bold">{selectedComponent.projectId}</h1>
             <h1 className="text-lg font-bold">{selectedComponent.componentId}</h1>
             <h2 className="text-lg font-bold">Percent Complete: {selectedComponent.percentComplete}%</h2>
