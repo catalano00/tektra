@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useState, Fragment, Suspense } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
@@ -34,7 +34,7 @@ function isValidProcess(value: string): value is ProcessType {
   return OPERATION_ORDER.includes(value as ProcessType);
 }
 
-export default function OperatorTimePage() {
+function OperatorTimePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -50,45 +50,61 @@ export default function OperatorTimePage() {
   const [process, setProcess] = useState<ProcessType | ''>('');
   const [availableProcesses, setAvailableProcesses] = useState<ProcessType[]>([]);
   const [showModal, setShowModal] = useState(false);
+
   const panelIdParam = searchParams?.get('componentId') ?? '';
   const projectIdParam = searchParams?.get('projectId') ?? '';
   const processParamRaw = searchParams?.get('process') ?? '';
   const teamLeadParam = searchParams?.get('teamLead') ?? '';
   const processParam: ProcessType | '' = isValidProcess(processParamRaw) ? processParamRaw : '';
 
+  const handleStop = () => {
+    setIsRunning(false);
+    setShowModal(true);
+  };
+
   useEffect(() => {
-    fetch(`/api/projects?filter=${projectFilter}`)
-      .then(res => res.json())
-      .then(setProjects)
-      .catch(console.error);
+    const loadProjects = async () => {
+      try {
+        const res = await fetch(`/api/projects?filter=${projectFilter}`);
+        const data = await res.json();
+        setProjects(data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadProjects();
   }, [projectFilter]);
 
   useEffect(() => {
     if (projectIdParam) setSelectedProject(projectIdParam);
   }, [projectIdParam]);
 
-    useEffect(() => {
-      if (!selectedProject) return;
+  useEffect(() => {
+    if (!selectedProject) return;
 
-      fetch(`/api/components?projectId=${selectedProject}`)
-        .then(res => res.json())
-        .then((data: { components: ComponentExtended[] }) => {
-          const filtered = data.components.filter(c => {
-            const isDelivered = c.currentStatus.toLowerCase().includes('delivered');
-            const isShipped = c.currentStatus.toLowerCase().includes('shipped');
-            const last = c.timeEntries?.filter(e => e.status === 'complete').at(-1)?.process;
-            return !isDelivered && !isShipped && last !== 'Ship';
-          });
+    const loadComponents = async () => {
+      try {
+        const res = await fetch(`/api/components?projectId=${selectedProject}`);
+        const data: { components: ComponentExtended[] } = await res.json();
+        const filtered = data.components.filter(c => {
+          const isDelivered = c.currentStatus.toLowerCase().includes('delivered');
+          const isShipped = c.currentStatus.toLowerCase().includes('shipped');
+          const last = c.timeEntries?.filter(e => e.status === 'complete').at(-1)?.process;
+          return !isDelivered && !isShipped && last !== 'Ship';
+        });
 
-          setComponents(filtered);
+        setComponents(filtered);
 
-          if (panelIdParam) {
-            const match = filtered.find(c => c.componentId === panelIdParam);
-            if (match) setSelectedComponent(match);
-          }
-        })
-        .catch(console.error);
-    }, [selectedProject]);
+        if (panelIdParam) {
+          const match = filtered.find(c => c.componentId === panelIdParam);
+          if (match) setSelectedComponent(match);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadComponents();
+  }, [selectedProject]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -103,15 +119,12 @@ export default function OperatorTimePage() {
   useEffect(() => {
     if (!selectedComponent) return;
 
-    fetch(`/api/time-entry?componentId=${selectedComponent.id}`)
-      .then(async res => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch time entries: ${res.status} - ${text}`);
-        }
-        return res.json();
-      })
-      .then((entries: TimeEntry[]) => {
+    const loadTimeEntries = async () => {
+      try {
+        const res = await fetch(`/api/time-entry?componentId=${selectedComponent.id}`);
+        if (!res.ok) throw new Error(`Failed to fetch time entries: ${res.status}`);
+        const entries: TimeEntry[] = await res.json();
+
         const completed = entries.filter(e => e.status === 'complete').map(e => e.process);
         const paused = entries.find(e => e.status === 'paused');
         const lastCompleted = entries
@@ -120,7 +133,7 @@ export default function OperatorTimePage() {
 
         if (paused) {
           setProcess(paused.process as ProcessType);
-          setTime(Math.round(paused.duration));
+          setTime(Math.round(paused.duration || 0));
           setWorkstation(paused.workstation);
           setTeamLead(paused.teamLead);
         } else {
@@ -133,14 +146,12 @@ export default function OperatorTimePage() {
 
         setIsRunning(false);
         setAvailableProcesses(OPERATION_ORDER.filter(p => !completed.includes(p)));
-      })
-      .catch(console.error);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadTimeEntries();
   }, [selectedComponent]);
-
-  const handleStop = () => {
-    setIsRunning(false);
-    setShowModal(true);
-  };
 
   const handleModalAction = async (action: string) => {
     if (!selectedComponent || !process) return;
@@ -182,9 +193,7 @@ export default function OperatorTimePage() {
           errorMessage += `: ${errorData?.error || JSON.stringify(errorData)}`;
         } else {
           const text = await putRes.text();
-          if (text) {
-            errorMessage += `: ${text}`;
-          }
+          if (text) errorMessage += `: ${text}`;
         }
       } catch (err) {
         errorMessage += ' — and failed to parse error body.';
@@ -197,30 +206,31 @@ export default function OperatorTimePage() {
 
     const isLastProcess = process === OPERATION_ORDER[OPERATION_ORDER.length - 1];
 
-if (action === 'complete') {
-  if (!isLastProcess) {
-    const postRes = await fetch('/api/time-entry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        componentId: selectedComponent.id,
-        componentCode: selectedComponent.componentId,
-        currentProcess: process,
-        teamLead,
-        workstation,
-        warehouse: 'Grand Junction',
-      }),
-    });
+    if (action === 'complete') {
+      if (!isLastProcess) {
+        const postRes = await fetch('/api/time-entry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            componentId: selectedComponent.id,
+            componentCode: selectedComponent.componentId,
+            currentProcess: process,
+            teamLead,
+            workstation,
+            warehouse: 'Grand Junction',
+          }),
+        });
 
-    if (postRes.status === 204) {
-      toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
-    } else if (!postRes.ok) {
-      console.error('Failed to create next time entry:', await postRes.text());
+        if (postRes.status === 204) {
+          toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
+        } else if (!postRes.ok) {
+          console.error('Failed to create next time entry:', await postRes.text());
+        }
+      } else {
+        toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
+      }
     }
-  } else {
-    toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
-  }
-}
+
     router.push(`/project/${selectedProject}`);
   };
 
@@ -358,5 +368,13 @@ if (action === 'complete') {
         </Dialog>
       </Transition>
     </main>
+  );
+}
+
+export default function OperatorTimePage() {
+  return (
+    <Suspense>
+      <OperatorTimePageInner />
+    </Suspense>
   );
 }
