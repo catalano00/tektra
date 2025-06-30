@@ -66,10 +66,12 @@ function OperatorTimePageInner() {
     const loadProjects = async () => {
       try {
         const res = await fetch(`/api/projects?filter=${projectFilter}`);
+        if (!res.ok) throw new Error('Failed to fetch projects');
         const data = await res.json();
-        setProjects(data);
+        setProjects(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
+        setProjects([]);
       }
     };
     loadProjects();
