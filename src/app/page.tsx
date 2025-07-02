@@ -39,6 +39,7 @@ export default function LandingPage() {
   const [activityFeed, setActivityFeed] = useState<ActivityEntry[]>([])
   const [metrics, setMetrics] = useState<Metrics>({})
   const [darkMode, setDarkMode] = useState(false)
+  
   //const [showWelcome, setShowWelcome] = useState(true)
 
   useEffect(() => {

@@ -1,31 +1,54 @@
-// /app/api/projects/route.ts
-
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
+
+// ✅ Reuse the same filter enum
+const FilterSchema = z.object({
+  filter: z
+    .preprocess(
+      (val) => (val === null || val === '' ? undefined : val),
+      z.enum(['all', 'active', 'completed']).default('active')
+    ),
+});
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const filter = searchParams.get('filter') || 'active';
 
-    const projects = await prisma.project.findMany({
-      where: filter === 'all' ? {} : {
-        currentStatus: {
-          in: ['Planned', 'In Production']
-        }
-      },
-      select: {
-        projectId: true,
-        currentStatus: true,
-      },
-      orderBy: {
-        projectId: 'asc',
-      },
+    const parsed = FilterSchema.safeParse({
+      filter: searchParams.get('filter'),
     });
 
-    return NextResponse.json(projects);
+    if (!parsed.success) {
+      console.warn('[PROJECTS COUNT INVALID QUERY]', parsed.error.format());
+      return NextResponse.json(
+        { error: 'Invalid query parameters', issues: parsed.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { filter } = parsed.data;
+
+    let where = {};
+    if (filter === 'active') {
+      where = {
+        currentStatus: { in: ['Planned', 'In Production'] },
+      };
+    } else if (filter === 'completed') {
+      where = {
+        currentStatus: { in: ['Delivered', 'Archived'] },
+      };
+    }
+
+    const count = await prisma.project.count({ where });
+
+    return NextResponse.json({ count });
   } catch (err) {
-    console.error('[PROJECTS GET ERROR]', err);
-    return NextResponse.json({ error: 'Failed to load projects' }, { status: 500 });
+    console.error('❌ [PROJECTS COUNT ERROR]', {
+      message: (err as Error).message,
+      stack: (err as Error).stack,
+    });
+
+    return NextResponse.json({ error: 'Failed to count projects' }, { status: 500 });
   }
 }

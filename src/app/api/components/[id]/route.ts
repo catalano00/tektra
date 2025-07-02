@@ -1,67 +1,98 @@
-// /app/api/components/[id]/route.ts
+import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
-import { prisma } from '@/lib/prisma'
-import { NextRequest, NextResponse } from 'next/server'
+// ✅ Param validation
+const ParamSchema = z.object({
+  id: z.string().min(1),
+});
+
+// ✅ Body validation for PUT
+const PutBodySchema = z.object({
+  currentStatus: z.string().optional(),
+  completedAt: z.string().datetime().optional(),
+  lastCompletedProcess: z.string().optional(),
+  nextProcess: z.string().optional(),
+  processStatus: z.string().optional(),
+  percentComplete: z.number().int().min(0).max(100).optional(),
+  workstation: z.string().optional(),
+  teamLead: z.string().optional(),
+});
 
 export async function GET(req: NextRequest) {
   try {
-    const id = req.nextUrl.pathname.split('/').pop()
+    const id = req.nextUrl.pathname.split('/').pop();
+    const parsed = ParamSchema.safeParse({ id });
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing component ID' }, { status: 400 })
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid or missing component ID', issues: parsed.error.format() },
+        { status: 400 }
+      );
     }
 
     const component = await prisma.component.findUnique({
-      where: { id },
+      where: { id: parsed.data.id },
       include: {
         project: true,
         partList: true,
         sheathing: true,
         timeEntries: true,
       },
-    })
+    });
 
     if (!component) {
-      return NextResponse.json({ error: 'Component not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Component not found' }, { status: 404 });
     }
 
-    const { id: componentId, ...rest } = component
-    return NextResponse.json({ ...rest, componentId })
+    const { id: componentId, ...rest } = component;
+    return NextResponse.json({ ...rest, componentId });
   } catch (err) {
-    console.error('[COMPONENT GET ERROR]', err)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    console.error('❌ [COMPONENT GET ERROR]', {
+      message: (err as Error).message,
+      stack: (err as Error).stack,
+    });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const id = req.url?.split('/').pop()
+    const id = req.url.split('/').pop();
+    const paramParsed = ParamSchema.safeParse({ id });
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing component ID' }, { status: 400 })
+    if (!paramParsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid or missing component ID', issues: paramParsed.error.format() },
+        { status: 400 }
+      );
     }
 
-    const body = await req.json()
+    const json = await req.json();
+    const bodyParsed = PutBodySchema.safeParse(json);
 
-    const updated = await prisma.component.update({
-      where: { id },
+    if (!bodyParsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid request body', issues: bodyParsed.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const update = await prisma.component.update({
+      where: { id: paramParsed.data.id },
       data: {
-        currentStatus: body.currentStatus,
-        completedAt: body.completedAt ?? undefined,
-        lastCompletedProcess: body.lastCompletedProcess ?? undefined,
-        nextProcess: body.nextProcess ?? undefined,
-        processStatus: body.processStatus ?? undefined,
-        percentComplete: body.percentComplete ?? undefined,
-        workstation: body.workstation ?? undefined,
-        teamLead: body.teamLead ?? undefined,
-        // remove totalCycleTime here unless it’s actually in your schema
+        ...bodyParsed.data,
       },
-    })
+    });
 
-    const { id: componentId, ...rest } = updated
-    return NextResponse.json({ ...rest, componentId })
+    const { id: componentId, ...rest } = update;
+    return NextResponse.json({ ...rest, componentId });
   } catch (err) {
-    console.error('[COMPONENT PUT ERROR]', err)
-    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 })
+    console.error('❌ [COMPONENT PUT ERROR]', {
+      message: (err as Error).message,
+      stack: (err as Error).stack,
+    });
+
+    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 });
   }
 }
