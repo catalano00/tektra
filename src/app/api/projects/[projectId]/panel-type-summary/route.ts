@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-// ✅ Validation schema for path param
+// ✅ Validation schema
 const ParamsSchema = z.object({
   projectId: z.string().min(1),
 });
@@ -10,7 +10,7 @@ const ParamsSchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     const pathParts = req.nextUrl.pathname.split('/');
-    const projectId = pathParts.at(-1); // safer than hardcoding [4]
+    const projectId = pathParts.at(-1);
 
     const parsed = ParamsSchema.safeParse({ projectId });
     if (!parsed.success) {
@@ -21,14 +21,22 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // ✅ Fetch panel type summary for this project
+    // ✅ Group component counts by type
     const summary = await prisma.component.groupBy({
       by: ['componentType'],
       where: { projectId: parsed.data.projectId },
       _count: true,
     });
 
-    return NextResponse.json(summary);
+    const formatted = summary.map((s) => ({
+      componentType: s.componentType,
+      count: s._count,
+    }));
+
+    return NextResponse.json({
+      projectId: parsed.data.projectId,
+      summary: formatted,
+    });
   } catch (err) {
     console.error('❌ [PANEL TYPE SUMMARY ERROR]', {
       message: (err as Error).message,

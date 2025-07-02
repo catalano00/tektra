@@ -1,8 +1,9 @@
-import { prisma } from '@/lib/prisma';
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
+// /app/api/projects/route.ts
 
-// ✅ Reuse the same filter enum
+import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+
 const FilterSchema = z.object({
   filter: z
     .preprocess(
@@ -11,16 +12,15 @@ const FilterSchema = z.object({
     ),
 });
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-
     const parsed = FilterSchema.safeParse({
       filter: searchParams.get('filter'),
     });
 
     if (!parsed.success) {
-      console.warn('[PROJECTS COUNT INVALID QUERY]', parsed.error.format());
+      console.warn('[PROJECTS INVALID QUERY]', parsed.error.format());
       return NextResponse.json(
         { error: 'Invalid query parameters', issues: parsed.error.format() },
         { status: 400 }
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     let where = {};
     if (filter === 'active') {
       where = {
-        currentStatus: { in: ['Planned', 'In Production'] },
+        currentStatus: { in: ['In Production'] },
       };
     } else if (filter === 'completed') {
       where = {
@@ -40,15 +40,17 @@ export async function GET(req: Request) {
       };
     }
 
-    const count = await prisma.project.count({ where });
-
-    return NextResponse.json({ count });
-  } catch (err) {
-    console.error('❌ [PROJECTS COUNT ERROR]', {
-      message: (err as Error).message,
-      stack: (err as Error).stack,
+    const projects = await prisma.project.findMany({
+      select: {
+        projectId: true,
+      },
+      orderBy: { projectId: 'asc' },
     });
 
-    return NextResponse.json({ error: 'Failed to count projects' }, { status: 500 });
+    return NextResponse.json(projects);
+
+  } catch (err) {
+    console.error('❌ [PROJECTS FETCH ERROR]', err);
+    return NextResponse.json({ error: 'Failed to fetch projects' }, { status: 500 });
   }
 }

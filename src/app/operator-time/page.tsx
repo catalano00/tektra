@@ -260,21 +260,18 @@ function OperatorTimePageInner() {
           <p className="text-center text-gray-500">Select a component to begin:</p>
 
           <div className="flex gap-4">
-            <select
-              className="border p-2 rounded w-1/2"
-              value={selectedProject}
-              onChange={(e) => {
-                setSelectedProject(e.target.value);
-                setSelectedComponent(null);
-              }}
-            >
-              <option value="">Select Project</option>
-              {projects.map((p) => (
-                <option key={p.projectId} value={p.projectId}>
-                  {p.projectId}
-                </option>
-              ))}
-            </select>
+           <select
+            className="border p-2 rounded"
+            value={selectedProject}
+            onChange={(e) => setSelectedProject(e.target.value)}
+          >
+            <option value="">Select Project</option>
+            {projects.map((p) => (
+              <option key={p.projectId} value={p.projectId}>
+                {p.projectId}
+              </option>
+            ))}
+          </select>
 
             <select
               className="border p-2 rounded w-1/2"
