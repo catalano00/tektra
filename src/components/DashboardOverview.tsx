@@ -32,20 +32,41 @@ export default function DashboardOverview() {
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
 
   useEffect(() => {
-    fetch('/api/projects/recent?limit=3')
-      .then(res => res.json())
-      .then(data => {
-        console.log('recentProjects API response:', data);
-        setRecentProjects(Array.isArray(data) ? data : []);
-      });
+  // Recent Projects
+  fetch('/api/projects/recent?limit=3')
+    .then(res => res.json())
+    .then(data => {
+      console.log('recentProjects API response:', data);
+      setRecentProjects(Array.isArray(data) ? data : []);
+    })
+    .catch(err => {
+      console.error("Recent projects fetch failed", err);
+      setRecentProjects([]);
+    });
 
-    fetch('/api/metrics/dashboard')
-      .then(res => res.json())
-      .then(setMetrics);
+  // Dashboard Metrics
+  fetch("/api/metrics/dashboard")
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
+      return res.json();
+    })
+    .then(setMetrics)
+    .catch(err => {
+      console.error("Dashboard metrics fetch failed", err);
+      setMetrics(null);
+    });
 
-    fetch('/api/activity?limit=5')
-      .then(res => res.json())
-      .then(setActivityFeed);
+  // Activity Feed
+  fetch("/api/activity?limit=5")
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to fetch recent activity');
+      return res.json();
+    })
+    .then(data => setActivityFeed(Array.isArray(data) ? data : []))
+    .catch(err => {
+      console.error("Activity fetch failed", err);
+      setActivityFeed([]);
+    });
   }, []);
 
   return (
