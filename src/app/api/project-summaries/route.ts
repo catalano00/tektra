@@ -32,7 +32,13 @@ export async function GET() {
         components: {
           select: {
             currentStatus: true,
-            timeEntries: true,
+            timeEntries: {
+              select: {
+                process: true,
+                status: true,
+                duration: true,
+              },
+            },
           },
         },
       },

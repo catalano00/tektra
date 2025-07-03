@@ -14,8 +14,10 @@ import {
   Settings,
   HelpCircle,
   User,
+  LogOut,
 } from 'lucide-react';
 import Image from 'next/image';
+import { useSession, signOut } from 'next-auth/react';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -28,23 +30,23 @@ const links = [
 const bottomLinks = [
   { href: '/settings', label: 'Settings', icon: <Settings size={18} /> },
   { href: '/help', label: 'Help & Support', icon: <HelpCircle size={18} /> },
-  { href: '/profile', label: 'Profile / Login', icon: <User size={18} /> },
 ];
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { data: session } = useSession();
 
   return (
     <div
-      className={`bg-gray-900 text-white h-screen p-4 flex flex-col justify-between transition-all duration-300 ${
+      className={`bg-gray-900 text-white h-screen p-4 flex flex-col justify-between transition-all duration-300 ease-in-out ${
         collapsed ? 'w-20' : 'w-64'
       }`}
     >
       {/* Top Section */}
       <div>
         {/* Logo */}
-        <div className="flex items-center justify-center mb-6">
+        <div className="flex items-center justify-center mb-6 transition-all duration-300">
           <Link href="/">
             <Image
               src={collapsed ? '/tektra-collapsed.png' : '/tektra-logo-dark.png'}
@@ -54,14 +56,6 @@ export default function Sidebar() {
             />
           </Link>
         </div>
-
-        {/* Collapse Toggle */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center text-gray-400 hover:text-white mt-10"
-        >
-          {collapsed ? <Menu size={20} /> : <X size={20} />}
-        </button>
 
         {/* Navigation */}
         <nav className="space-y-2">
@@ -97,6 +91,38 @@ export default function Sidebar() {
             {!collapsed && <span>{label}</span>}
           </Link>
         ))}
+
+        {/* Profile/Login */}
+        {session ? (
+          <button
+            onClick={() => signOut()}
+            className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm hover:bg-gray-800 text-gray-400 w-full text-left"
+            title={collapsed ? 'Log out' : ''}
+          >
+            <span><LogOut size={18} /></span>
+            {!collapsed && <span>Log out</span>}
+          </button>
+        ) : (
+          <Link
+            href="/profile"
+            className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm hover:bg-gray-800 text-gray-400"
+            title={collapsed ? 'Login' : ''}
+          >
+            <span><User size={18} /></span>
+            {!collapsed && <span>Login</span>}
+          </Link>
+        )}
+
+        {/* Collapse Toggle */}
+        <div className="mt-6 pt-4 border-t border-gray-700 flex justify-center">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="text-gray-400 hover:text-white transition"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <Menu size={20} /> : <X size={20} />}
+          </button>
+        </div>
       </div>
     </div>
   );
