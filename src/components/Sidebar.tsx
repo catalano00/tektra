@@ -104,7 +104,7 @@ export default function Sidebar() {
           </button>
         ) : (
           <Link
-            href="/profile"
+            href="/login"
             className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm hover:bg-gray-800 text-gray-400"
             title={collapsed ? 'Login' : ''}
           >

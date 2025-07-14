@@ -5,7 +5,7 @@ import { formatTime } from '@/utils/format';
 
 type RecentProject = {
   projectId: string;
-  name?: string; // ← Prisma doesn't show `name` in your model, so remove or adjust if needed
+  componentId?: string; // ← Prisma doesn't show `name` in your model, so remove or adjust if needed
   currentStatus: string;
   updatedAt?: string;
 };
@@ -15,11 +15,12 @@ type Metrics = {
   totalComponents: number;
   totalCycleTime: number;
   avgCycleTime: number;
+  completedPanels: number;
 };
 
 type Activity = {
   id: string;
-  componentCode: string;
+  componentId: string;
   process: string;
   status: string;
   teamLead: string;
@@ -79,7 +80,7 @@ export default function DashboardOverview() {
         </div>
         <div className="bg-white shadow rounded-2xl p-4">
           <h3 className="text-sm text-gray-500">Total Panels</h3>
-          <p className="text-2xl font-bold">{metrics?.totalComponents ?? '-'}</p>
+          <p className="text-2xl font-bold">{metrics?.completedPanels ?? '-'}</p>
         </div>
         <div className="bg-white shadow rounded-2xl p-4">
           <h3 className="text-sm text-gray-500">Avg Cycle Time</h3>
@@ -89,7 +90,7 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Recent Projects */}
+      {/* Recent Projects */}B CCV HN 
       <div className="bg-white shadow rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-2">Recent Projects</h2>
         <ul className="divide-y divide-gray-200">
@@ -114,7 +115,7 @@ export default function DashboardOverview() {
           {activityFeed.map(entry => (
             <li key={entry.id} className="py-2">
               <div className="font-medium">
-                {entry.componentCode} - {entry.process} ({entry.status})
+                {entry.componentId} - {entry.process} ({entry.status})
               </div>
               <div className="text-sm text-gray-500">
                 {entry.teamLead} · {new Date(entry.updatedAt).toLocaleString()}

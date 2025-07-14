@@ -14,7 +14,7 @@ export async function GET() {
       prisma.component.count({
         where: {
           currentStatus: {
-            contains: 'Pending', // You can tighten this if needed
+            contains: 'Released for Manufacturing', // You can tighten this if needed
           },
         },
       }),
