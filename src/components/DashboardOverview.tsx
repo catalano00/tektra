@@ -19,6 +19,7 @@ type Metrics = {
 };
 
 type Activity = {
+  timestamp: any;
   id: string;
   componentId: string;
   process: string;
@@ -90,12 +91,12 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Recent Projects */}B CCV HN 
+      {/* Recent Projects */}
       <div className="bg-white shadow rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-2">Recent Projects</h2>
         <ul className="divide-y divide-gray-200">
-          {recentProjects.map(project => (
-            <li key={project.projectId} className="py-2">
+          {recentProjects.map((project, index) => (
+            <li key={project.projectId || `project-${index}`} className="py-2">
               <div className="font-medium">{project.projectId ?? 'Untitled Project'}</div>
               <div className="text-sm text-gray-500">
                 Status: {project.currentStatus} · Last updated:{' '}
@@ -112,13 +113,13 @@ export default function DashboardOverview() {
       <div className="bg-white shadow rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-2">Recent Activity</h2>
         <ul className="divide-y divide-gray-200">
-          {activityFeed.map(entry => (
-            <li key={entry.id} className="py-2">
+          {activityFeed.map((entry, index) => (
+            <li key={entry.id || `activity-${index}`} className="py-2">
               <div className="font-medium">
                 {entry.componentId} - {entry.process} ({entry.status})
               </div>
               <div className="text-sm text-gray-500">
-                {entry.teamLead} · {new Date(entry.updatedAt).toLocaleString()}
+                {entry.teamLead} ·  {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Invalid Date'}
               </div>
             </li>
           ))}

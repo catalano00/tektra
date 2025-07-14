@@ -45,8 +45,28 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Component not found' }, { status: 404 });
     }
 
-    const { id: componentId, ...rest } = component;
-    return NextResponse.json({ ...rest, componentId });
+    return NextResponse.json({
+      componentId: component.id,
+      componentType: component.componentType,
+      currentStatus: component.currentStatus,
+      designUrl: component.designUrl,
+      componentsqft: component.componentsqft,
+      percentComplete: component.percentComplete,
+      processStatus: component.processStatus,
+      lastCompletedProcess: component.lastCompletedProcess,
+      nextProcess: component.nextProcess,
+      teamLead: component.teamLead,
+      projectName: component.project.projectId,
+      partList: component.partList,
+      sheathing: component.sheathing,
+      timeEntries: component.timeEntries.map((t) => ({
+        process: t.process,
+        status: t.status,
+        teamLead: t.teamLead,
+        duration: t.duration,
+        updatedAt: t.updatedAt,
+      })),
+    });
   } catch (err) {
     console.error('❌ [COMPONENT GET ERROR]', {
       message: (err as Error).message,

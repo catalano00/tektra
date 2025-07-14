@@ -2,7 +2,6 @@ import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-// ✅ Zod schema for limit param
 const QuerySchema = z.object({
   limit: z.preprocess(
     (val) => {
@@ -33,25 +32,33 @@ export async function GET(req: Request) {
     const recentActivity = await prisma.timeEntry.findMany({
       orderBy: { updatedAt: 'desc' },
       take: limit,
-      select: {
-        id: true,
-        componentCode: true,
-        process: true,
-        status: true,
-        teamLead: true,
-        updatedAt: true,
+      include: {
+        component: {
+          include: {
+            project: {
+              select: {
+                projectId: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    const normalized = recentActivity.map((entry) => ({
+    const enriched = recentActivity.map((entry) => ({
+      id: entry.id,
       componentId: entry.componentCode,
+      projectId: entry.component?.project?.projectId ?? 'Unknown',
+      componentType: entry.component?.componentType ?? 'Unknown',
       process: entry.process,
       status: entry.status,
       teamLead: entry.teamLead,
       timestamp: entry.updatedAt.toISOString(),
+      cycleTimeSeconds: entry.duration ?? 0,
+      percentComplete: entry.component?.percentComplete ?? 0,
     }));
 
-    return NextResponse.json(normalized);
+    return NextResponse.json(enriched);
   } catch (err) {
     console.error('❌ [ACTIVITY FEED ERROR]', {
       message: (err as Error).message,
