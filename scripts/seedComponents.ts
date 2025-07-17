@@ -5,7 +5,7 @@ import csv from 'csv-parser';
 
 const prisma = new PrismaClient();
 
-export async function seedComponentsFromCSV() {
+export async function seedComponents() {
   const filePath = path.join(__dirname, 'seedComponents.csv');
   const components: any[] = [];
 

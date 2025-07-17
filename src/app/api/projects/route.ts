@@ -1,31 +1,56 @@
 // /app/api/projects/route.ts
 
-import { prisma } from '@/lib/prisma';
-import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 
-export async function GET(req: Request) {
+const FilterSchema = z.object({
+  filter: z
+    .preprocess(
+      (val) => (val === null || val === '' ? undefined : val),
+      z.enum(['all', 'active', 'completed']).default('active')
+    ),
+});
+
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const filter = searchParams.get('filter') || 'active';
+    const parsed = FilterSchema.safeParse({
+      filter: searchParams.get('filter'),
+    });
+
+    if (!parsed.success) {
+      console.warn('[PROJECTS INVALID QUERY]', parsed.error.format());
+      return NextResponse.json(
+        { error: 'Invalid query parameters', issues: parsed.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { filter } = parsed.data;
+
+    let where = {};
+    if (filter === 'active') {
+      where = {
+        currentStatus: { in: ['In Production'] },
+      };
+    } else if (filter === 'completed') {
+      where = {
+        currentStatus: { in: ['Delivered', 'Archived'] },
+      };
+    }
 
     const projects = await prisma.project.findMany({
-      where: filter === 'all' ? {} : {
-        currentStatus: {
-          in: ['Planned', 'In Production']
-        }
-      },
       select: {
         projectId: true,
-        currentStatus: true,
       },
-      orderBy: {
-        projectId: 'asc',
-      },
+      orderBy: { projectId: 'asc' },
     });
 
     return NextResponse.json(projects);
+
   } catch (err) {
-    console.error('[PROJECTS GET ERROR]', err);
-    return NextResponse.json({ error: 'Failed to load projects' }, { status: 500 });
+    console.error('❌ [PROJECTS FETCH ERROR]', err);
+    return NextResponse.json({ error: 'Failed to fetch projects' }, { status: 500 });
   }
 }

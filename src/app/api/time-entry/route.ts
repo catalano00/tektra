@@ -1,30 +1,75 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
+// 🔐 Shared constants
+const OPERATION_ORDER = ['Cut', 'Assemble', 'Fly', 'Ship'] as const;
+
+// ✅ Zod Schemas
+const STATUS_VALUES = ['pending', 'complete', 'paused'] as const;
+const StatusEnum = z.enum(STATUS_VALUES);
+
+const OperationEnum = z.enum(OPERATION_ORDER);
+
+// ✅ GET
+const GetQuerySchema = z.object({
+  componentId: z.string().min(1),
+});
+
+// ✅ PUT — all Prisma-required fields should be required here
+const PutBodySchema = z.object({
+  componentId: z.string().min(1),
+  componentCode: z.string().min(1),
+  process: OperationEnum,
+  status: StatusEnum,
+  duration: z.number().optional(),
+  workstation: z.string().min(1),
+  teamLead: z.string().min(1),
+  warehouse: z.string().min(1),
+});
+
+// ✅ POST — values used to create the next entry
+const PostBodySchema = z.object({
+  componentId: z.string().min(1),
+  componentCode: z.string().min(1),
+  currentProcess: OperationEnum,
+  teamLead: z.string().min(1),
+  workstation: z.string().min(1),
+  warehouse: z.string().min(1),
+});
+
+// ✅ GET
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const componentId = searchParams.get('componentId');
+    const parsed = GetQuerySchema.safeParse({
+      componentId: searchParams.get('componentId'),
+    });
 
-    if (!componentId) {
-      return NextResponse.json({ error: 'Missing componentId' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Missing or invalid componentId' }, { status: 400 });
     }
 
     const entries = await prisma.timeEntry.findMany({
-      where: { componentId },
+      where: { componentId: parsed.data.componentId },
       orderBy: { updatedAt: 'asc' },
     });
 
     return NextResponse.json(entries);
-  } catch (error: any) {
-    console.error('GET /api/time-entry error:', error?.message || error);
+  } catch (error) {
+    console.error('❌ GET /api/v1/time-entry error:', error);
     return NextResponse.json({ error: 'Failed to retrieve entries' }, { status: 500 });
   }
 }
 
+// ✅ PUT
 export async function PUT(req: Request) {
   try {
-    const body = await req.json();
+    const json = await req.json();
+    const parsed = PutBodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid request body', issues: parsed.error.format() }, { status: 400 });
+    }
 
     const {
       componentId,
@@ -35,34 +80,13 @@ export async function PUT(req: Request) {
       workstation,
       teamLead,
       warehouse,
-    } = body;
-
-    if (!componentId || !process || !status) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
+    } = parsed.data;
 
     const durationInSeconds = Number.isFinite(duration) ? Math.round(Number(duration)) : 0;
-    if (isNaN(durationInSeconds)) {
-      return NextResponse.json({ error: 'Invalid duration' }, { status: 400 });
-    }
-
-    console.log('⏱️ Saving time entry:', {
-      componentId,
-      componentCode,
-      process,
-      status,
-      durationInSeconds,
-      workstation,
-      teamLead,
-      warehouse,
-    });
 
     const entry = await prisma.timeEntry.upsert({
       where: {
-        componentId_process: {
-          componentId,
-          process,
-        },
+        componentId_process: { componentId, process },
       },
       update: {
         status,
@@ -115,19 +139,24 @@ export async function PUT(req: Request) {
       });
     }
 
-    return NextResponse.json(entry, { status: 200 });
-  } catch (error: any) {
-    console.error('❌ PUT /api/time-entry error:', {
-      message: error.message,
-      stack: error.stack,
+    return NextResponse.json(entry);
+  } catch (error) {
+    console.error('❌ PUT /api/v1/time-entry error:', {
+      message: (error as Error).message,
+      stack: (error as Error).stack,
     });
     return NextResponse.json({ error: 'Failed to save entry' }, { status: 500 });
   }
 }
 
+// ✅ POST
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const json = await req.json();
+    const parsed = PostBodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid request body', issues: parsed.error.format() }, { status: 400 });
+    }
 
     const {
       componentId,
@@ -136,18 +165,9 @@ export async function POST(req: Request) {
       teamLead,
       workstation,
       warehouse,
-    } = body;
+    } = parsed.data;
 
-    if (!componentId || !componentCode || !currentProcess || !warehouse) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const OPERATION_ORDER = ['Cut', 'Assemble', 'Fly', 'Ship'] as const;
     const currentIndex = OPERATION_ORDER.indexOf(currentProcess);
-    if (currentIndex === -1) {
-      return NextResponse.json({ error: 'Invalid currentProcess value' }, { status: 400 });
-    }
-
     const nextProcess = OPERATION_ORDER[currentIndex + 1];
     if (!nextProcess) {
       console.info(`✅ Component ${componentId} has completed all operations.`);
@@ -163,7 +183,7 @@ export async function POST(req: Request) {
 
     if (existing) {
       console.info(`ℹ️ Next process '${nextProcess}' already exists for component ${componentId}.`);
-      return NextResponse.json({ message: 'Next process already exists' }, { status: 200 });
+      return NextResponse.json({ message: 'Next process already exists' });
     }
 
     const newEntry = await prisma.timeEntry.create({
@@ -180,10 +200,10 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(newEntry, { status: 201 });
-  } catch (error: any) {
-    console.error('❌ POST /api/time-entry error:', {
-      message: error.message,
-      stack: error.stack,
+  } catch (error) {
+    console.error('❌ POST /api/v1/time-entry error:', {
+      message: (error as Error).message,
+      stack: (error as Error).stack,
     });
 
     return NextResponse.json({ error: 'Failed to create next time entry' }, { status: 500 });

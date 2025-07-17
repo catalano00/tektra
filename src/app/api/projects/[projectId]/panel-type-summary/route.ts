@@ -1,24 +1,48 @@
-import { prisma } from '@/lib/prisma'
-import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+
+// ✅ Validation schema
+const ParamsSchema = z.object({
+  projectId: z.string().min(1),
+});
 
 export async function GET(req: NextRequest) {
   try {
-    const projectId = req.nextUrl.pathname.split('/')[4] // or use a more robust path parser
+    const pathParts = req.nextUrl.pathname.split('/');
+    const projectId = pathParts.at(-1);
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'Missing projectId' }, { status: 400 })
+    const parsed = ParamsSchema.safeParse({ projectId });
+    if (!parsed.success) {
+      console.warn('[PROJECT DETAILS INVALID PARAM]', parsed.error.format());
+      return NextResponse.json(
+        { error: 'Invalid or missing projectId', issues: parsed.error.format() },
+        { status: 400 }
+      );
     }
 
-    // Run your query here using `projectId`
+    // ✅ Group component counts by type
     const summary = await prisma.component.groupBy({
       by: ['componentType'],
-      where: { projectId },
+      where: { projectId: parsed.data.projectId },
       _count: true,
-    })
+    });
 
-    return NextResponse.json(summary)
+    const formatted = summary.map((s) => ({
+      componentType: s.componentType,
+      count: s._count,
+    }));
+
+    return NextResponse.json({
+      projectId: parsed.data.projectId,
+      summary: formatted,
+    });
   } catch (err) {
-    console.error('[PANEL TYPE SUMMARY ERROR]', err)
-    return NextResponse.json({ error: 'Failed to get panel type summary' }, { status: 500 })
+    console.error('❌ [PANEL TYPE SUMMARY ERROR]', {
+      message: (err as Error).message,
+      stack: (err as Error).stack,
+    });
+
+    return NextResponse.json({ error: 'Failed to get panel type summary' }, { status: 500 });
   }
 }

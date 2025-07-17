@@ -5,7 +5,7 @@ import { formatTime } from '@/utils/format';
 
 type RecentProject = {
   projectId: string;
-  name?: string; // ← Prisma doesn't show `name` in your model, so remove or adjust if needed
+  componentId?: string; // ← Prisma doesn't show `name` in your model, so remove or adjust if needed
   currentStatus: string;
   updatedAt?: string;
 };
@@ -15,11 +15,13 @@ type Metrics = {
   activeComponents: number;
   completedPanels: number;
   avgCycleTime: number;
+  completedPanels: number;
 };
 
 type Activity = {
+  timestamp: any;
   id: string;
-  componentCode: string;
+  componentId: string;
   process: string;
   status: string;
   teamLead: string;
@@ -32,20 +34,41 @@ export default function DashboardOverview() {
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
 
   useEffect(() => {
-    fetch('/api/projects/recent?limit=3')
-      .then(res => res.json())
-      .then(data => {
-        console.log('recentProjects API response:', data);
-        setRecentProjects(Array.isArray(data) ? data : []);
-      });
+  // Recent Projects
+  fetch('/api/projects/recent?limit=3')
+    .then(res => res.json())
+    .then(data => {
+      console.log('recentProjects API response:', data);
+      setRecentProjects(Array.isArray(data) ? data : []);
+    })
+    .catch(err => {
+      console.error("Recent projects fetch failed", err);
+      setRecentProjects([]);
+    });
 
-    fetch('/api/metrics/dashboard')
-      .then(res => res.json())
-      .then(setMetrics);
+  // Dashboard Metrics
+  fetch("/api/metrics/dashboard")
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
+      return res.json();
+    })
+    .then(setMetrics)
+    .catch(err => {
+      console.error("Dashboard metrics fetch failed", err);
+      setMetrics(null);
+    });
 
-    fetch('/api/activity?limit=5')
-      .then(res => res.json())
-      .then(setActivityFeed);
+  // Activity Feed
+  fetch("/api/activity?limit=5")
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to fetch recent activity');
+      return res.json();
+    })
+    .then(data => setActivityFeed(Array.isArray(data) ? data : []))
+    .catch(err => {
+      console.error("Activity fetch failed", err);
+      setActivityFeed([]);
+    });
   }, []);
 
   return (
@@ -62,6 +85,7 @@ export default function DashboardOverview() {
         </div>
         <div className="bg-white shadow rounded-2xl p-4">
           <h3 className="text-sm text-gray-500">Completed Panels</h3>
+          <h3 className="text-sm text-gray-500">Total Panels</h3>
           <p className="text-2xl font-bold">{metrics?.completedPanels ?? '-'}</p>
         </div>
         <div className="bg-white shadow rounded-2xl p-4">
@@ -76,8 +100,8 @@ export default function DashboardOverview() {
       <div className="bg-white shadow rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-2">Recent Projects</h2>
         <ul className="divide-y divide-gray-200">
-          {recentProjects.map(project => (
-            <li key={project.projectId} className="py-2">
+          {recentProjects.map((project, index) => (
+            <li key={project.projectId || `project-${index}`} className="py-2">
               <div className="font-medium">{project.projectId ?? 'Untitled Project'}</div>
               <div className="text-sm text-gray-500">
                 Status: {project.currentStatus} · Last updated:{' '}
@@ -94,13 +118,13 @@ export default function DashboardOverview() {
       <div className="bg-white shadow rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-2">Recent Activity</h2>
         <ul className="divide-y divide-gray-200">
-          {activityFeed.map(entry => (
-            <li key={entry.id} className="py-2">
+          {activityFeed.map((entry, index) => (
+            <li key={entry.id || `activity-${index}`} className="py-2">
               <div className="font-medium">
-                {entry.componentCode} - {entry.process} ({entry.status})
+                {entry.componentId} - {entry.process} ({entry.status})
               </div>
               <div className="text-sm text-gray-500">
-                {entry.teamLead} · {new Date(entry.updatedAt).toLocaleString()}
+                {entry.teamLead} ·  {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Invalid Date'}
               </div>
             </li>
           ))}

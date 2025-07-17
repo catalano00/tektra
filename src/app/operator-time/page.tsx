@@ -1,17 +1,23 @@
 'use client';
 
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useState, Fragment, Suspense } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { formatTime } from '@/utils/format';
-import type { Component as PrismaComponent, TimeEntry, Part, Sheathing } from '@prisma/client';
+import type { TimeEntry, Part, Sheathing } from '@prisma/client';
 
 interface Project {
   projectId: string;
 }
 
-interface ComponentExtended extends PrismaComponent {
+interface ComponentExtended {
+  id: string;
+  projectId: string;
+  componentId: string;
+  componentType: string;
+  currentStatus: string;
+  componentsqft?: number;
   timeEntries?: TimeEntry[];
   partList?: Part[];
   sheathing?: Sheathing[];
@@ -28,7 +34,7 @@ function isValidProcess(value: string): value is ProcessType {
   return OPERATION_ORDER.includes(value as ProcessType);
 }
 
-export default function OperatorTimePage() {
+function OperatorTimePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -51,11 +57,24 @@ export default function OperatorTimePage() {
   const teamLeadParam = searchParams?.get('teamLead') ?? '';
   const processParam: ProcessType | '' = isValidProcess(processParamRaw) ? processParamRaw : '';
 
+  const handleStop = () => {
+    setIsRunning(false);
+    setShowModal(true);
+  };
+
   useEffect(() => {
-    fetch(`/api/projects?filter=${projectFilter}`)
-      .then(res => res.json())
-      .then(setProjects)
-      .catch(console.error);
+    const loadProjects = async () => {
+      try {
+        const res = await fetch(`/api/projects?filter=${projectFilter}`);
+        if (!res.ok) throw new Error('Failed to fetch projects');
+        const data = await res.json();
+        setProjects(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error(err);
+        setProjects([]);
+      }
+    };
+    loadProjects();
   }, [projectFilter]);
 
   useEffect(() => {
@@ -65,10 +84,11 @@ export default function OperatorTimePage() {
   useEffect(() => {
     if (!selectedProject) return;
 
-    fetch(`/api/components?projectId=${selectedProject}`)
-      .then(res => res.json())
-      .then((data) => {
-        const filtered = (data.components || []).filter((c: ComponentExtended) => {
+    const loadComponents = async () => {
+      try {
+        const res = await fetch(`/api/components?projectId=${selectedProject}`);
+        const data: { components: ComponentExtended[] } = await res.json();
+        const filtered = data.components.filter(c => {
           const isDelivered = c.currentStatus.toLowerCase().includes('delivered');
           const isShipped = c.currentStatus.toLowerCase().includes('shipped');
           const last = c.timeEntries?.filter(e => e.status === 'complete').at(-1)?.process;
@@ -78,11 +98,14 @@ export default function OperatorTimePage() {
         setComponents(filtered);
 
         if (panelIdParam) {
-          const match = filtered.find((c: { componentId: string }) => c.componentId === panelIdParam);
+          const match = filtered.find(c => c.componentId === panelIdParam);
           if (match) setSelectedComponent(match);
         }
-      })
-      .catch(console.error);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadComponents();
   }, [selectedProject]);
 
   useEffect(() => {
@@ -98,15 +121,12 @@ export default function OperatorTimePage() {
   useEffect(() => {
     if (!selectedComponent) return;
 
-    fetch(`/api/time-entry?componentId=${selectedComponent.id}`)
-      .then(async res => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch time entries: ${res.status} - ${text}`);
-        }
-        return res.json();
-      })
-      .then((entries: TimeEntry[]) => {
+    const loadTimeEntries = async () => {
+      try {
+        const res = await fetch(`/api/time-entry?componentId=${selectedComponent.id}`);
+        if (!res.ok) throw new Error(`Failed to fetch time entries: ${res.status}`);
+        const entries: TimeEntry[] = await res.json();
+
         const completed = entries.filter(e => e.status === 'complete').map(e => e.process);
         const paused = entries.find(e => e.status === 'paused');
         const lastCompleted = entries
@@ -115,7 +135,7 @@ export default function OperatorTimePage() {
 
         if (paused) {
           setProcess(paused.process as ProcessType);
-          setTime(Math.round(paused.duration));
+          setTime(Math.round(paused.duration || 0));
           setWorkstation(paused.workstation);
           setTeamLead(paused.teamLead);
         } else {
@@ -128,14 +148,12 @@ export default function OperatorTimePage() {
 
         setIsRunning(false);
         setAvailableProcesses(OPERATION_ORDER.filter(p => !completed.includes(p)));
-      })
-      .catch(console.error);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadTimeEntries();
   }, [selectedComponent]);
-
-  const handleStop = () => {
-    setIsRunning(false);
-    setShowModal(true);
-  };
 
   const handleModalAction = async (action: string) => {
     if (!selectedComponent || !process) return;
@@ -177,9 +195,7 @@ export default function OperatorTimePage() {
           errorMessage += `: ${errorData?.error || JSON.stringify(errorData)}`;
         } else {
           const text = await putRes.text();
-          if (text) {
-            errorMessage += `: ${text}`;
-          }
+          if (text) errorMessage += `: ${text}`;
         }
       } catch (err) {
         errorMessage += ' — and failed to parse error body.';
@@ -192,30 +208,31 @@ export default function OperatorTimePage() {
 
     const isLastProcess = process === OPERATION_ORDER[OPERATION_ORDER.length - 1];
 
-if (action === 'complete') {
-  if (!isLastProcess) {
-    const postRes = await fetch('/api/time-entry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        componentId: selectedComponent.id,
-        componentCode: selectedComponent.componentId,
-        currentProcess: process,
-        teamLead,
-        workstation,
-        warehouse: 'Grand Junction',
-      }),
-    });
+    if (action === 'complete') {
+      if (!isLastProcess) {
+        const postRes = await fetch('/api/time-entry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            componentId: selectedComponent.id,
+            componentCode: selectedComponent.componentId,
+            currentProcess: process,
+            teamLead,
+            workstation,
+            warehouse: 'Grand Junction',
+          }),
+        });
 
-    if (postRes.status === 204) {
-      toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
-    } else if (!postRes.ok) {
-      console.error('Failed to create next time entry:', await postRes.text());
+        if (postRes.status === 204) {
+          toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
+        } else if (!postRes.ok) {
+          console.error('Failed to create next time entry:', await postRes.text());
+        }
+      } else {
+        toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
+      }
     }
-  } else {
-    toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
-  }
-}
+
     router.push(`/project/${selectedProject}`);
   };
 
@@ -243,37 +260,35 @@ if (action === 'complete') {
           <p className="text-center text-gray-500">Select a component to begin:</p>
 
           <div className="flex gap-4">
-            <select
-              className="border p-2 rounded w-1/2"
-              value={selectedProject}
-              onChange={(e) => {
-                setSelectedProject(e.target.value);
-                setSelectedComponent(null);
-              }}
-            >
-              <option value="">Select Project</option>
-              {projects.map((p) => (
-                <option key={p.projectId} value={p.projectId}>
-                  {p.projectId}
-                </option>
-              ))}
-            </select>
+           <select
+            className="border p-2 rounded"
+            value={selectedProject}
+            onChange={(e) => setSelectedProject(e.target.value)}
+          >
+            <option value="">Select Project</option>
+            {projects.map((p) => (
+              <option key={p.projectId} value={p.projectId}>
+                {p.projectId}
+              </option>
+            ))}
+          </select>
 
             <select
               className="border p-2 rounded w-1/2"
-              value={selectedComponent?.componentId || ''}
               onChange={(e) => {
-                const comp = components.find((c: PrismaComponent) => c.componentId === e.target.value);
+                const comp: ComponentExtended | undefined = components.find(
+                  (c) => c.componentId === e.target.value
+                );
                 setSelectedComponent(comp || null);
               }}
               disabled={!selectedProject}
             >
               <option value="">Select Component</option>
-             {components.map((c: PrismaComponent) => (
-              <option key={c.componentId} value={c.componentId}>
-                {c.componentId}
-              </option>
-              ))}
+              {components.map((c: ComponentExtended) => (
+            <option key={c.componentId} value={c.componentId}>
+              {c.componentId}
+            </option>
+          ))}
             </select>
           </div>
         </div>
@@ -281,7 +296,7 @@ if (action === 'complete') {
 
         {selectedComponent && (
           <div className="p-4 border rounded bg-white shadow space-y-4">
-            <button onClick={() => router.push('/operator-time')} className="text-sm text-blue-600 underline">Change Selection</button>
+            <button onClick={() => router.push('/project-summaries')} className="text-sm text-blue-600 underline">Change Selection</button>
             <h1 className="text-2xl font-bold">{selectedComponent.projectId}</h1>
             <h1 className="text-lg font-bold">{selectedComponent.componentId}</h1>
             <h2 className="text-lg font-bold">Percent Complete: {selectedComponent.percentComplete}%</h2>
@@ -352,5 +367,13 @@ if (action === 'complete') {
         </Dialog>
       </Transition>
     </main>
+  );
+}
+
+export default function OperatorTimePage() {
+  return (
+    <Suspense>
+      <OperatorTimePageInner />
+    </Suspense>
   );
 }
