@@ -25,68 +25,101 @@ model Project {
   expectedProductionStart      DateTime?
   expectedProductionCompletion DateTime?
   notes                        String?
-  updatedAt                    DateTime? @updatedAt @default (now())
+  updatedAt                    DateTime?   @default(now()) @updatedAt
   components                   Component[]
 
   @@map("projects")
 }
 
 model TimeEntry {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid())
   componentId   String
-  componentCode String
-  warehouse     String
-  workstation   String
-  teamLead      String
-  process       Process
-  status        Status
+  componentCode String?
+  component     Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  process       String
+  status        String
   duration      Int
+  teamLead      String?
+  workstation   String?
+  warehouse     String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  component     Component @relation(fields: [componentId], references: [id])
-
   @@unique([componentId, process])
 }
 
 model Component {
-  id                   String      @id @default(uuid())
+  id                   String    @id @default(uuid())
   componentId          String
+  projectId            String
   componentType        String
   currentStatus        String
+  percentComplete      Int
+  processStatus        String?
   lastCompletedProcess String?
   nextProcess          String?
-  processStatus        String?
-  percentComplete      Int?
-  completedAt          DateTime?
   designUrl            String?
-  workstation          String?
+  componentsqft        Float?
   teamLead             String?
-  dateshipped          DateTime?
+  workstation          String?
+  completedAt          DateTime?
   datedelivered        DateTime?
-  componentsqft        Int
-  projectId            String
-  project              Project     @relation(fields: [projectId], references: [projectId])
-  partList             Part[]
-  sheathing            Sheathing?
-  timeEntries          TimeEntry[]
+  dateshipped          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  maxWidth             String?
+  maxHeight            String?
+  Level                String?
+  weight               Float?
+  sequence             String?
+
+  timeEntries      TimeEntry[]
+  qualityIssues    QualityIssue[] // ✅ back-reference
+  Project          Project?       @relation(fields: [projectProjectId], references: [projectId])
+  projectProjectId String?
+  part             Part[]
+  sheathing        Sheathing?
+  connectors       Connectors?
+  framingTL        FramingTL?
 }
 
 model Part {
   id          String    @id @default(cuid())
   componentId String
-  label       String
   size        String
+  label       String
   count       Int
   cutLength   String
   component   Component @relation(fields: [componentId], references: [id])
 }
 
 model Sheathing {
-  id          String    @id @default(cuid())
-  componentId String    @unique
-  panelArea   String
-  panelCount  Float
-  component   Component @relation(fields: [componentId], references: [id])
+  id            String    @id @default(cuid())
+  componentId   String    @unique
+  componentCode String
+  panelArea     String
+  count         Float
+  description   String?
+  component     Component @relation(fields: [componentId], references: [id])
+}
+
+model Connectors {
+  id            String    @id @default(cuid())
+  componentCode String
+  componentId   String    @unique
+  label         String
+  count         Int
+  description   String?
+  component     Component @relation(fields: [componentId], references: [id])
+}
+
+model FramingTL {
+  id            String    @id @default(cuid())
+  componentCode String
+  componentId   String    @unique
+  ftype         String
+  totalLength   String
+  count         Int
+  component     Component @relation(fields: [componentId], references: [id])
 }
 
 enum Process {
@@ -100,4 +133,17 @@ enum Status {
   pending
   complete
   paused
+}
+
+model QualityIssue {
+  id                String   @id @default(uuid())
+  componentId       String
+  process           String
+  issueCode         String
+  engineeringAction String?
+  notes             String?
+  training          String?
+  createdAt         DateTime @default(now())
+
+  component Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
 }

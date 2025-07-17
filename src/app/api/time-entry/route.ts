@@ -19,7 +19,7 @@ const GetQuerySchema = z.object({
 // ✅ PUT — all Prisma-required fields should be required here
 const PutBodySchema = z.object({
   componentId: z.string().min(1),
-  componentCode: z.string().min(1),
+  componentCode: z.string().optional(),
   process: OperationEnum,
   status: StatusEnum,
   duration: z.number().optional(),
@@ -31,7 +31,7 @@ const PutBodySchema = z.object({
 // ✅ POST — values used to create the next entry
 const PostBodySchema = z.object({
   componentId: z.string().min(1),
-  componentCode: z.string().min(1),
+  componentCode: z.string().optional(),
   currentProcess: OperationEnum,
   teamLead: z.string().min(1),
   workstation: z.string().min(1),
@@ -66,9 +66,13 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const json = await req.json();
+
     const parsed = PutBodySchema.safeParse(json);
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid request body', issues: parsed.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid request body', issues: parsed.error.format() },
+        { status: 400 }
+      );
     }
 
     const {
@@ -80,35 +84,53 @@ export async function PUT(req: Request) {
       workstation,
       teamLead,
       warehouse,
-    } = parsed.data;
+    }: z.infer<typeof PutBodySchema> = parsed.data;
 
     const durationInSeconds = Number.isFinite(duration) ? Math.round(Number(duration)) : 0;
 
-    const entry = await prisma.timeEntry.upsert({
-      where: {
-        componentId_process: { componentId, process },
-      },
-      update: {
-        status,
-        duration: durationInSeconds,
-        workstation,
-        teamLead,
-        componentCode,
-        warehouse,
-        updatedAt: new Date(),
-      },
-      create: {
-        componentId,
-        componentCode,
-        process,
-        status,
-        duration: durationInSeconds,
-        workstation,
-        teamLead,
-        warehouse,
-      },
+    // 🔍 Check for existing entry
+    const existingEntry = await prisma.timeEntry.findFirst({
+      where: { componentId, process },
     });
 
+    // ✅ Build update and create payloads safely
+    const createData: any = {
+      componentId,
+      process,
+      status,
+      duration: durationInSeconds,
+      workstation,
+      teamLead,
+      warehouse,
+    };
+
+    const updateData: any = {
+      status,
+      duration: durationInSeconds,
+      workstation,
+      teamLead,
+      warehouse,
+      updatedAt: new Date(),
+    };
+
+    if (componentCode) {
+      createData.componentCode = componentCode;
+      updateData.componentCode = componentCode;
+    }
+
+    let entry;
+    if (existingEntry) {
+      entry = await prisma.timeEntry.update({
+        where: { id: existingEntry.id },
+        data: updateData,
+      });
+    } else {
+      entry = await prisma.timeEntry.create({
+        data: createData,
+      });
+    }
+
+    // ✅ Update component status if completed
     if (status === 'complete') {
       const allCompleted = await prisma.timeEntry.findMany({
         where: { componentId, status: 'complete' },
@@ -141,7 +163,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json(entry);
   } catch (error) {
-    console.error('❌ PUT /api/v1/time-entry error:', {
+    console.error('❌ PUT /api/time-entry error:', {
       message: (error as Error).message,
       stack: (error as Error).stack,
     });
@@ -160,7 +182,7 @@ export async function POST(req: Request) {
 
     const {
       componentId,
-      componentCode,
+      componentCode = '',
       currentProcess,
       teamLead,
       workstation,

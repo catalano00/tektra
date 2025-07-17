@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 // ✅ Param validation
 const ParamSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().uuid('Invalid UUID'),
 });
 
 // ✅ Body validation for PUT
@@ -19,7 +19,8 @@ const PutBodySchema = z.object({
   teamLead: z.string().optional(),
 });
 
-export async function GET(req: NextRequest) {
+// ✅ GET /api/components/[id]
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const id = req.nextUrl.pathname.split('/').pop();
     const parsed = ParamSchema.safeParse({ id });
@@ -32,21 +33,26 @@ export async function GET(req: NextRequest) {
     }
 
     const component = await prisma.component.findUnique({
-      where: { id: parsed.data.id },
-      include: {
-        project: true,
-        partList: true,
-        sheathing: true,
-        timeEntries: true,
-      },
+  where: { id: parsed.data.id },
+  include: {
+    Project: true,
+    timeEntries: {
+      orderBy: { updatedAt: 'asc' },
+    },
+    Part: true,
+    Sheathing: true,
+    Connectors: true,
+    FramingTL: true,
+    },
     });
-
+    
     if (!component) {
       return NextResponse.json({ error: 'Component not found' }, { status: 404 });
     }
 
     return NextResponse.json({
       componentId: component.id,
+      componentCode: component.componentId,
       componentType: component.componentType,
       currentStatus: component.currentStatus,
       designUrl: component.designUrl,
@@ -56,27 +62,26 @@ export async function GET(req: NextRequest) {
       lastCompletedProcess: component.lastCompletedProcess,
       nextProcess: component.nextProcess,
       teamLead: component.teamLead,
-      projectName: component.project.projectId,
-      partList: component.partList,
-      sheathing: component.sheathing,
+      updatedAt: component.updatedAt,
+      projectName: component.Project?.projectId || 'Unknown',
+      sheathing: component.Sheathing,
       timeEntries: component.timeEntries.map((t) => ({
         process: t.process,
         status: t.status,
         teamLead: t.teamLead,
         duration: t.duration,
+        createdAt: t.createdAt,
         updatedAt: t.updatedAt,
       })),
     });
   } catch (err) {
-    console.error('❌ [COMPONENT GET ERROR]', {
-      message: (err as Error).message,
-      stack: (err as Error).stack,
-    });
+    console.error('❌ [COMPONENT GET ERROR]', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-export async function PUT(req: Request) {
+// ✅ PUT /api/components/[id]
+export async function PUT(req: Request): Promise<NextResponse> {
   try {
     const id = req.url.split('/').pop();
     const paramParsed = ParamSchema.safeParse({ id });
@@ -100,19 +105,14 @@ export async function PUT(req: Request) {
 
     const update = await prisma.component.update({
       where: { id: paramParsed.data.id },
-      data: {
-        ...bodyParsed.data,
-      },
+      data: { ...bodyParsed.data },
     });
 
-    const { id: componentId, ...rest } = update;
-    return NextResponse.json({ ...rest, componentId });
+    return NextResponse.json({
+      ...update,
+    });
   } catch (err) {
-    console.error('❌ [COMPONENT PUT ERROR]', {
-      message: (err as Error).message,
-      stack: (err as Error).stack,
-    });
-
+    console.error('❌ [COMPONENT PUT ERROR]', err);
     return NextResponse.json({ error: 'Failed to update component' }, { status: 500 });
   }
 }

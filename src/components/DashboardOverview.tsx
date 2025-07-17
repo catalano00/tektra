@@ -60,15 +60,15 @@ export default function DashboardOverview() {
 
   // Activity Feed
   fetch("/api/activity?limit=5")
-    .then(res => {
-      if (!res.ok) throw new Error('Failed to fetch recent activity');
-      return res.json();
-    })
-    .then(data => setActivityFeed(Array.isArray(data) ? data : []))
-    .catch(err => {
-      console.error("Activity fetch failed", err);
-      setActivityFeed([]);
-    });
+    .then(async (res) => {
+  if (!res.ok) throw new Error("Failed to fetch recent activity");
+  const data = await res.json();
+  setActivityFeed(Array.isArray(data.activities) ? data.activities : []);
+  })
+.catch((err) => {
+  console.error("Activity fetch failed", err);
+  setActivityFeed([]);
+  });
   }, []);
 
   return (

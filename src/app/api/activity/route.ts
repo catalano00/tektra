@@ -1,69 +1,31 @@
 import { prisma } from '@/lib/prisma';
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { NextRequest, NextResponse } from 'next/server';
 
-const QuerySchema = z.object({
-  limit: z.preprocess(
-    (val) => {
-      const num = Number(val);
-      return Number.isFinite(num) && num > 0 && num <= 100 ? num : undefined;
-    },
-    z.number().int().min(1).max(100).default(10)
-  ),
-});
-
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const parsed = QuerySchema.safeParse({
-      limit: searchParams.get('limit'),
-    });
+    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '5');
 
-    if (!parsed.success) {
-      console.warn('[ACTIVITY FEED INVALID QUERY]', parsed.error.format());
-      return NextResponse.json(
-        { error: 'Invalid query parameters', issues: parsed.error.format() },
-        { status: 400 }
-      );
-    }
-
-    const { limit } = parsed.data;
-
-    const recentActivity = await prisma.timeEntry.findMany({
-      orderBy: { updatedAt: 'desc' },
+    const entries = await prisma.timeEntry.findMany({
       take: limit,
+      orderBy: { updatedAt: 'desc' },
       include: {
-        component: {
-          include: {
-            project: {
-              select: {
-                projectId: true,
-              },
-            },
-          },
-        },
+        component: true,
       },
     });
 
-    const enriched = recentActivity.map((entry) => ({
+    const activities = entries.map(entry => ({
       id: entry.id,
-      componentId: entry.componentCode,
-      projectId: entry.component?.project?.projectId ?? 'Unknown',
-      componentType: entry.component?.componentType ?? 'Unknown',
+      componentId: entry.component?.componentId ?? entry.componentId,
       process: entry.process,
       status: entry.status,
-      teamLead: entry.teamLead,
-      timestamp: entry.updatedAt.toISOString(),
-      cycleTimeSeconds: entry.duration ?? 0,
-      percentComplete: entry.component?.percentComplete ?? 0,
+      teamLead: entry.teamLead ?? 'N/A',
+      updatedAt: entry.updatedAt,
+      timestamp: entry.updatedAt, // used by dashboard
     }));
 
-    return NextResponse.json(enriched);
+    return NextResponse.json({ activities });
   } catch (err) {
-    console.error('❌ [ACTIVITY FEED ERROR]', {
-      message: (err as Error).message,
-      stack: (err as Error).stack,
-    });
-    return NextResponse.json({ error: 'Failed to load activity feed' }, { status: 500 });
+    console.error('❌ GET /api/activity error:', err);
+    return NextResponse.json({ error: 'Failed to fetch activity feed' }, { status: 500 });
   }
 }

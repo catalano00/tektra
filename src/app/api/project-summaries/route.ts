@@ -1,124 +1,61 @@
+// app/api/project-summaries/route.ts
+
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
-// ✅ Zod Schemas for validation
-const TimeEntrySchema = z.object({
-  process: z.string(),
-  status: z.string(),
-  duration: z.number().optional(),
-});
-
-const ComponentSchema = z.object({
-  currentStatus: z.string(),
-  timeEntries: z.array(TimeEntrySchema),
-});
-
-const ProjectSchema = z.object({
-  projectId: z.string(),
-  currentStatus: z.string(),
-  components: z.array(ComponentSchema),
-});
-
-const ProjectListSchema = z.array(ProjectSchema);
-
-// ✅ Main GET handler
 export async function GET() {
   try {
-    const projectsRaw = await prisma.project.findMany({
-      select: {
-        projectId: true,
-        currentStatus: true,
+    const PROCESS_ORDER = ['Cut', 'Assemble', 'Fly', 'Ship'];
+
+    const projects = await prisma.project.findMany({
+      include: {
         components: {
-          select: {
-            currentStatus: true,
-            timeEntries: {
-              select: {
-                process: true,
-                status: true,
-                duration: true,
-              },
-            },
+          include: {
+            timeEntries: true,
           },
         },
       },
     });
 
-    // ✅ Validate structure
-    const validation = ProjectListSchema.safeParse(projectsRaw);
-    if (!validation.success) {
-      console.error('❌ Zod validation failed for project summaries:', validation.error.format());
-      return NextResponse.json(
-        {
-          error: 'Malformed data from database',
-          issues: validation.error.format(),
-        },
-        { status: 500 }
-      );
-    }
+    const summary = projects.map(project => {
+      const panels = project.components || [];
+      const totalPanels = panels.length;
 
-    const projects = validation.data;
+      let completedCount = 0;
+      let inProgressCount = 0;
+      let totalCycleTime = 0;
+      let aggregatePercent = 0;
 
-    // ✅ Compute summaries safely
-    const summaries = projects.map((project) => {
-      const { projectId, components, currentStatus } = project;
-      const totalPanels = components.length;
+      panels.forEach(panel => {
+        const entries = panel.timeEntries ?? [];
+        const completed = new Set(entries.filter(e => e.status === 'complete').map(e => e.process));
 
-      const completedCount = components.filter(
-        (c) => c.currentStatus === 'Delivered'
-      ).length;
+        const isComplete = completed.has('Ship');
+        if (isComplete) completedCount++;
+        else if (entries.some(e => e.status === 'in progress' || e.status === 'paused')) inProgressCount++;
 
-      const inProgressCount = components.filter((c) => {
-        return (
-          !c.timeEntries.some(
-            (te) => te.process === 'Ship' && te.status === 'complete'
-          ) &&
-          c.timeEntries.some((te) => te.status === 'pending')
-        );
-      }).length;
+        const panelTime = entries.reduce((sum, e) => sum + (e.duration ?? 0), 0);
+        totalCycleTime += panelTime;
 
-      const totalCycleTime = components.reduce((sum, c) => {
-        const componentCycleTime = c.timeEntries.reduce(
-          (innerSum, te) => innerSum + (te.duration || 0),
-          0
-        );
-        return sum + componentCycleTime;
-      }, 0);
+        aggregatePercent += Math.round((completed.size / PROCESS_ORDER.length) * 100);
+      });
 
-      const percentComplete =
-        totalPanels > 0
-          ? Math.round((completedCount / totalPanels) * 100)
-          : 0;
+      const percentComplete = totalPanels > 0 ? Math.round(aggregatePercent / totalPanels) : 0;
 
       return {
-        projectId,
+        projectId: project.projectId,
         totalPanels,
         completedCount,
         inProgressCount,
         totalCycleTime,
         percentComplete,
-        status: currentStatus,
+        status: project.currentStatus ?? 'Unknown',
       };
     });
 
-    // ✅ Optionally enable caching (uncomment if using static regeneration)
-    // return NextResponse.json(summaries, {
-    //   status: 200,
-    //   headers: {
-    //     'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
-    //   },
-    // });
-
-    return NextResponse.json(summaries);
+    return NextResponse.json(summary);
   } catch (error) {
-    console.error('❌ Unexpected error in /api/v1/project-summaries:', {
-      message: (error as Error).message,
-      stack: (error as Error).stack,
-    });
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('❌ Failed to load project summaries:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

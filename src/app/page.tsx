@@ -52,18 +52,25 @@ export default function LandingPage() {
       .then(setMetrics)
 
     fetch('/api/activity?limit=5')
-      .then(res => res.json())
-      .then(setActivityFeed)
-  }, [])
-
-  return (
-    <main className={`min-h-screen relative flex flex-col items-center justify-center px-4 text-center transition-colors duration-300 ${darkMode ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="space-y-10 max-w-6xl w-full relative z-10"
-      >
+  .then(async res => {
+    if (!res.ok) throw new Error('Failed to fetch activity feed');
+    const data = await res.json();
+    setActivityFeed(Array.isArray(data.activities) ? data.activities : []);
+  })
+    .catch(err => {
+      console.error('Activity feed error:', err);
+      setActivityFeed([]);
+    });
+  }, []); // <-- Close useEffect here
+  
+    return (
+      <main className={`min-h-screen relative flex flex-col items-center justify-center px-4 text-center transition-colors duration-300 ${darkMode ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="space-y-10 max-w-6xl w-full relative z-10"
+        >
         {/* Logo and dark mode toggle */}
         <div className="flex justify-between items-center w-full mt-4">
           <Image

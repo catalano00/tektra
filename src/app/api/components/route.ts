@@ -32,6 +32,9 @@ export async function GET(req: Request) {
       where: { projectId },
       include: {
         timeEntries: true,
+        Part: true,
+        Sheathing: true,
+
       },
       orderBy: { componentId: 'asc' },
     });

@@ -13,7 +13,7 @@ export async function GET() {
         currentStatus: true,
         designUrl: true,
         projectId: true,
-        project: {
+        Project: {
           select: {
             projectId: true,
             streetaddress: true,
@@ -32,7 +32,7 @@ export async function GET() {
       currentStatus: c.currentStatus,
       designUrl: c.designUrl,
       projectId: c.projectId,
-      projectName: c.project?.streetaddress || c.projectId,
+      projectName: c.Project?.streetaddress || c.projectId,
     }));
 
     return NextResponse.json({ components: formatted });

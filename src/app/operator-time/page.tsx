@@ -17,11 +17,11 @@ interface ComponentExtended {
   componentId: string;
   componentType: string;
   currentStatus: string;
+  percentComplete: number;
   componentsqft?: number;
   timeEntries?: TimeEntry[];
-  partList?: Part[];
-  sheathing?: Sheathing[];
-  percentComplete: number;
+  Part?: Part[];             // ✅ Rename to match Prisma schema
+  Sheathing?: Sheathing;     // ✅ Should be singular, not array
 }
 
 const OPERATION_ORDER = ['Cut', 'Assemble', 'Fly', 'Ship'] as const;
@@ -136,8 +136,8 @@ function OperatorTimePageInner() {
         if (paused) {
           setProcess(paused.process as ProcessType);
           setTime(Math.round(paused.duration || 0));
-          setWorkstation(paused.workstation);
-          setTeamLead(paused.teamLead);
+          setWorkstation(paused.workstation ?? '');
+          setTeamLead(paused.teamLead ?? '');
         } else {
           const nextProcess = OPERATION_ORDER.find(p => !completed.includes(p));
           setProcess(processParam || nextProcess || '');
@@ -155,30 +155,30 @@ function OperatorTimePageInner() {
     loadTimeEntries();
   }, [selectedComponent]);
 
-  const handleModalAction = async (action: string) => {
-    if (!selectedComponent || !process) return;
+const handleModalAction = async (action: string) => {
+  if (!selectedComponent || !process) return;
 
-    const status = action === 'complete' ? 'complete' : action;
-    const durationInSeconds = Math.round(Number(time));
+  // 🚨 QUALITY ISSUE: Redirect instead of saving time entry
+if (action === 'quality') {
+  try {
+    const durationInSeconds = Math.round(Number(time) || 0);
 
-    if (!Number.isFinite(durationInSeconds)) {
-      alert('Invalid duration. Cannot save.');
-      return;
-    }
-
-    const payload = {
+    // ✅ 1. Construct payload
+    const payload: Record<string, any> = {
       componentId: selectedComponent.id,
-      componentCode: selectedComponent.componentId,
       process,
-      status,
+      status: 'paused', // or 'quality-issue' if you define it
       duration: durationInSeconds,
-      workstation,
       teamLead,
+      workstation,
       warehouse: 'Grand Junction',
     };
 
-    console.log('Sending time entry data:', payload);
+    if (selectedComponent.componentId) {
+      payload.componentCode = selectedComponent.componentId;
+    }
 
+    // ✅ 2. Save current process time entry
     const putRes = await fetch('/api/time-entry', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -186,55 +186,137 @@ function OperatorTimePageInner() {
     });
 
     if (!putRes.ok) {
-      const contentType = putRes.headers.get('content-type');
-      let errorMessage = `Status ${putRes.status}`;
-
-      try {
-        if (contentType?.includes('application/json')) {
-          const errorData = await putRes.json();
-          errorMessage += `: ${errorData?.error || JSON.stringify(errorData)}`;
-        } else {
-          const text = await putRes.text();
-          if (text) errorMessage += `: ${text}`;
-        }
-      } catch (err) {
-        errorMessage += ' — and failed to parse error body.';
-      }
-
-      console.error('❌ Failed to save current time entry:', errorMessage);
-      alert('Failed to save the current entry. Please try again.');
+      console.error('❌ Failed to save time entry before quality issue:', await putRes.text());
+      alert('Failed to save the current process entry.');
       return;
     }
 
-    const isLastProcess = process === OPERATION_ORDER[OPERATION_ORDER.length - 1];
+    // ✅ 3. Schedule the next process
+    const postRes = await fetch('/api/time-entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        componentId: selectedComponent.id,
+        componentCode: selectedComponent.componentId,
+        currentProcess: process,
+        teamLead,
+        workstation,
+        warehouse: 'Grand Junction',
+      }),
+    });
 
-    if (action === 'complete') {
-      if (!isLastProcess) {
-        const postRes = await fetch('/api/time-entry', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            componentId: selectedComponent.id,
-            componentCode: selectedComponent.componentId,
-            currentProcess: process,
-            teamLead,
-            workstation,
-            warehouse: 'Grand Junction',
-          }),
-        });
-
-        if (postRes.status === 204) {
-          toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
-        } else if (!postRes.ok) {
-          console.error('Failed to create next time entry:', await postRes.text());
-        }
-      } else {
-        toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
-      }
+    if (!postRes.ok) {
+      console.error('❌ Failed to create next time entry for quality issue:', await postRes.text());
+      alert('Failed to prepare the next process.');
+      return;
     }
 
-    router.push(`/project/${selectedProject}`);
+    // ✅ 4. Update component status
+    const updateRes = await fetch(`/api/components/${selectedComponent.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentStatus: 'Quality Issue',
+      }),
+    });
+
+    if (!updateRes.ok) {
+      console.error('❌ Failed to update component status:', await updateRes.text());
+      alert('Failed to update component to quality issue status.');
+      return;
+    }
+
+    // ✅ 5. Redirect to quality issue form
+    router.push(
+      `/quality-issue?projectName=${encodeURIComponent(selectedComponent.projectId)}&componentId=${selectedComponent.id}&process=${encodeURIComponent(process)}`
+    );
+  } catch (error) {
+    console.error('❌ Unexpected error during quality issue handling:', error);
+    alert('Unexpected error occurred. Please try again.');
+  }
+
+  return;
+}
+  // 🚨 NORMAL ACTION: Save time entry and update component status
+
+  const status = action === 'complete' ? 'complete' : action;
+  const durationInSeconds = Math.round(Number(time));
+
+  if (!Number.isFinite(durationInSeconds)) {
+    alert('Invalid duration. Cannot save.');
+    return;
+  }
+
+  const payload = {
+    componentId: selectedComponent.id,
+    componentCode: selectedComponent.componentId,
+    process,
+    status,
+    duration: durationInSeconds,
+    workstation,
+    teamLead,
+    warehouse: 'Grand Junction',
   };
+
+  console.log('Sending time entry data:', payload);
+
+  const putRes = await fetch('/api/time-entry', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!putRes.ok) {
+    const contentType = putRes.headers.get('content-type');
+    let errorMessage = `Status ${putRes.status}`;
+
+    try {
+      if (contentType?.includes('application/json')) {
+        const errorData = await putRes.json();
+        errorMessage += `: ${errorData?.error || JSON.stringify(errorData)}`;
+      } else {
+        const text = await putRes.text();
+        if (text) errorMessage += `: ${text}`;
+      }
+    } catch (err) {
+      errorMessage += ' — and failed to parse error body.';
+    }
+
+    console.error('❌ Failed to save current time entry:', errorMessage);
+    alert('Failed to save the current entry. Please try again.');
+    return;
+  }
+
+  const isLastProcess = process === OPERATION_ORDER[OPERATION_ORDER.length - 1];
+
+  if (action === 'complete') {
+    if (!isLastProcess) {
+      const postRes = await fetch('/api/time-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          componentId: selectedComponent.id,
+          componentCode: selectedComponent.componentId,
+          currentProcess: process,
+          teamLead,
+          workstation,
+          warehouse: 'Grand Junction',
+        }),
+      });
+
+      if (postRes.status === 204) {
+        toast.success(`✅ Process "${process}" completed for ${selectedComponent.componentId}`);
+      } else if (!postRes.ok) {
+        console.error('Failed to create next time entry:', await postRes.text());
+      }
+    } else {
+      toast.success(`✅ Component ${selectedComponent.componentId} is fully completed!`);
+    }
+  }
+
+  router.push(`/project/${selectedProject}`);
+};
+
 
   const totalSeconds = selectedComponent?.timeEntries?.reduce((sum, entry) => sum + (entry.duration || 0), 0) || 0;
   const currentIndex = OPERATION_ORDER.indexOf(processParam as ProcessType);
@@ -304,9 +386,33 @@ function OperatorTimePageInner() {
             <p><strong>Component Status:</strong> {selectedComponent.currentStatus}</p>
             <p><strong>Current Process:</strong> {process}</p>
             <p><strong>Square Feet:</strong> {selectedComponent.componentsqft || '—'}</p>
-            <p><strong>Part List:</strong> {selectedComponent.partList?.join(', ') || '—'}</p>
+            <div>
+              <h3 className="font-bold">Part List:</h3>
+              {selectedComponent.Part?.length ? (
+                <ul className="list-disc pl-4">
+                  {selectedComponent.Part.map((part) => (
+                    <li key={part.id}>
+                      {part.label} — {part.count} pcs — {part.cutLength}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>—</p>
+              )}
+            </div>
+            <div>
+              <h3 className="font-bold">Sheathing Info:</h3>
+              {selectedComponent.Sheathing ? (
+                <ul className="list-disc pl-4">
+                  <li>Description: {selectedComponent.Sheathing.description || 'N/A'}</li>
+                  <li>Panel Area: {selectedComponent.Sheathing.panelArea}</li>
+                  <li>Count: {selectedComponent.Sheathing.count}</li>
+                </ul>
+              ) : (
+                <p>—</p>
+              )}
+            </div>
             <p><strong>Total Production Time:</strong> {formatTime(totalSeconds)}</p>
-            
             <select className="border p-2 rounded w-full" value={workstation} onChange={(e) => setWorkstation(e.target.value)}>
             <option value="">Select Workstation</option>
               {WORKSTATIONS.map(w => <option key={w} value={w}>{w}</option>)}
