@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+// Ensure this route is always executed on demand rather than being statically cached
+export const dynamic = 'force-dynamic';
 
 type Process = 'Cut' | 'Assemble' | 'Fly' | 'Ship';
 const PROCESS_ORDER: Process[] = ['Cut', 'Assemble', 'Fly', 'Ship'];
