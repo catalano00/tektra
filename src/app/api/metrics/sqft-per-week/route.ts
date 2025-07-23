@@ -4,23 +4,25 @@ import { startOfWeek, formatISO } from 'date-fns';
 
 export async function GET() {
   try {
-    // Get all components with a completedAt date and componentsqft value
+    // Get all components with a dateshipped date and componentsqft value
     const components = await prisma.component.findMany({
-      where: { completedAt: { not: null }, componentsqft: { not: null } },
-      select: { completedAt: true, componentsqft: true },
+      where: { dateshipped: { not: null }, componentsqft: { not: null } },
+      select: { dateshipped: true, componentsqft: true },
     });
 
-    // Group sqft by week
-    const weekMap: Record<string, number> = {};
+    // Group sqft and count by week
+    const weekMap: Record<string, { sqft: number; count: number }> = {};
     for (const c of components) {
-      if (!c.completedAt || !c.componentsqft) continue;
-      const week = formatISO(startOfWeek(new Date(c.completedAt)), { representation: 'date' });
-      weekMap[week] = (weekMap[week] || 0) + Number(c.componentsqft);
+      if (!c.dateshipped || !c.componentsqft) continue;
+      const week = formatISO(startOfWeek(new Date(c.dateshipped)), { representation: 'date' });
+      if (!weekMap[week]) weekMap[week] = { sqft: 0, count: 0 };
+      weekMap[week].sqft += Number(c.componentsqft);
+      weekMap[week].count += 1;
     }
 
-    // Format for chart: [{ week: '2025-07-01', sqft: 1200 }, ...]
+    // Format for chart: [{ week: '2025-07-01', sqft: 1200, count: 5 }, ...]
     const result = Object.entries(weekMap)
-      .map(([week, sqft]) => ({ week, sqft }))
+      .map(([week, { sqft, count }]) => ({ week, sqft, count }))
       .sort((a, b) => a.week.localeCompare(b.week));
 
     return NextResponse.json(result);

@@ -10,6 +10,7 @@ interface TimeEntry {
   createdAt: string
   updatedAt: string
   teamLead?: string
+  duration?: number
 }
 
 interface Component {
@@ -101,7 +102,10 @@ export default function ProjectPage() {
   ).length
 
   const totalPanels = components.length
-  const totalCycleTime = components.reduce((acc, c) => acc + (c.totalCycleTime || 0), 0)
+  const totalCycleTime = components.reduce(
+    (acc, c) => acc + (c.timeEntries?.reduce((sum, entry) => sum + (entry.duration || 0), 0) || 0),
+    0
+  )
   const percentComplete = totalPanels > 0 ? Math.round((completedCount / totalPanels) * 100) : 0
 
   const getStatusColor = (status: string) => {
@@ -109,6 +113,11 @@ export default function ProjectPage() {
     if (status.toLowerCase().includes('ship')) return 'bg-blue-200 text-blue-800'
     return 'bg-yellow-200 text-yellow-800'
   }
+
+  // Sort filteredComponents by percentComplete descending
+  const sortedComponents = [...filteredComponents].sort(
+    (a, b) => (b.percentComplete || 0) - (a.percentComplete || 0)
+  );
 
   return (
    <main className="max-w-6xl mx-auto p-6 space-y-6">
@@ -187,9 +196,10 @@ export default function ProjectPage() {
           </tr>
         </thead>
         <tbody>
-          {filteredComponents.map(comp => {
+          {sortedComponents.map(comp => {
             const { lastProcess, nextProcess, processStatus } = getProcessDetails(comp.timeEntries)
-            const cycleTime = comp.totalCycleTime || 0
+            // Sum duration from timeEntries for this component
+            const cycleTime = comp.timeEntries?.reduce((acc, entry) => acc + (entry.duration || 0), 0) || 0
             const teamLead = getLastTeamLead(comp.timeEntries)
             return (
               <tr key={comp.componentId} className="border-t">
@@ -203,6 +213,7 @@ export default function ProjectPage() {
                         comp.currentStatus === 'Cutting Complete' ? 'bg-blue-100 text-blue-800' :
                         comp.currentStatus === 'Framing Complete' ? 'bg-gray-100 text-gray-800' :
                         comp.currentStatus === 'Ready to Ship' ? 'bg-orange-100 text-orange-800' :
+                        comp.currentStatus === 'Quality Issue' ? 'bg-red-100 text-red-800' :
                         'bg-slate-100 text-slate-800'
                       }`}
                   >

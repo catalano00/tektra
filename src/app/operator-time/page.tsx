@@ -324,9 +324,9 @@ if (action === 'quality') {
     ? Math.floor(((currentIndex) / OPERATION_ORDER.length) * 100)
     : 0;
   
-    return(
-      <main className="p-6 max-w-2xl mx-auto space-y-4">
-        <h1 className="text-2xl font-bold">Operator Panel</h1>
+    return (
+      <main className="p-4 sm:p-6 md:p-8 w-full max-w-10xl mx-auto space-y-10"> {/* Changed max-w-4xl to max-w-6xl */}
+        <h1 className="text-2xl font-bold mb-2">Operator Panel</h1>
 
         <div className="text-center text-4xl font-mono">{formatTime(time)}</div>
 
@@ -338,47 +338,50 @@ if (action === 'quality') {
         </div>
 
         {!selectedComponent && (
-        <div className="space-y-4">
-          <p className="text-center text-gray-500">Select a component to begin:</p>
-
-          <div className="flex gap-4">
-           <select
-            className="border p-2 rounded"
-            value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
-          >
-            <option value="">Select Project</option>
-            {projects.map((p) => (
-              <option key={p.projectId} value={p.projectId}>
-                {p.projectId}
-              </option>
-            ))}
-          </select>
-
-            <select
-              className="border p-2 rounded w-1/2"
-              onChange={(e) => {
-                const comp: ComponentExtended | undefined = components.find(
-                  (c) => c.componentId === e.target.value
-                );
-                setSelectedComponent(comp || null);
-              }}
-              disabled={!selectedProject}
-            >
-              <option value="">Select Component</option>
-              {components.map((c: ComponentExtended) => (
-            <option key={c.componentId} value={c.componentId}>
-              {c.componentId}
-            </option>
-          ))}
-            </select>
+          <div className="space-y-4">
+            <p className="text-center text-gray-500">Select a component to begin:</p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <select
+                className="border p-2 rounded w-full sm:w-1/2"
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+              >
+                <option value="">Select Project</option>
+                {projects.map((p) => (
+                  <option key={p.projectId} value={p.projectId}>
+                    {p.projectId}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="border p-2 rounded w-full sm:w-1/2"
+                onChange={(e) => {
+                  const comp: ComponentExtended | undefined = components.find(
+                    (c) => c.componentId === e.target.value
+                  );
+                  setSelectedComponent(comp || null);
+                }}
+                disabled={!selectedProject}
+              >
+                <option value="">Select Component</option>
+                {components.map((c: ComponentExtended) => (
+                  <option key={c.componentId} value={c.componentId}>
+                    {c.componentId}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
         {selectedComponent && (
-          <div className="p-4 border rounded bg-white shadow space-y-4">
-            <button onClick={() => router.push('/project-summaries')} className="text-sm text-blue-600 underline">Change Selection</button>
+          <div className="p-4 border rounded bg-white shadow space-y-4 w-full">
+            <button
+              onClick={() => router.push('/project-summaries')}
+              className="text-sm text-blue-600 underline"
+            >
+              Change Selection
+            </button>
             <h1 className="text-2xl font-bold">{selectedComponent.projectId}</h1>
             <h1 className="text-lg font-bold">{selectedComponent.componentId}</h1>
             <h2 className="text-lg font-bold">Percent Complete: {selectedComponent.percentComplete}%</h2>

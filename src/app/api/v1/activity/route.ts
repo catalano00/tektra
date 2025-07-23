@@ -27,12 +27,14 @@ export async function GET(req: NextRequest) {
     const activities = entries.map(entry => ({
       id: entry.id,
       componentId: entry.component?.componentId ?? entry.componentId,
+      componentType: entry.component?.componentType ?? null, // <-- add this line
       process: entry.process,
       status: entry.status,
       teamLead: entry.teamLead ?? 'N/A',
-      duration: formatTime(entry.duration),
+      duration: entry.duration, // <-- return as number, not formatTime
       createdAt: formatDate(entry.createdAt),
       updatedAt: formatDate(entry.updatedAt),
+      projectId: entry.component?.Project?.projectId ?? null, // <-- add this line
       project:
         entry.component && entry.component.Project
           ? {

@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { formatTime } from '@/utils/format';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, LineChart, Line,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, LineChart, Line, ComposedChart,
 } from 'recharts';
+import { getISOWeek, getISOWeekYear } from 'date-fns';
 
 type RecentProject = {
   projectId: string;
@@ -36,7 +37,7 @@ export default function DashboardOverview() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
   const [cycleTimeByType, setCycleTimeByType] = useState<{ type: string; avgCycleTime: number }[]>([]);
-  const [sqftPerWeek, setSqftPerWeek] = useState<{ week: string; sqft: number }[]>([]);
+  const [sqftPerWeek, setSqftPerWeek] = useState<{ week: string; sqft: number; count: number }[]>([]);
 
   useEffect(() => {
     fetch('/api/projects/recent?limit=3')
@@ -75,6 +76,23 @@ export default function DashboardOverview() {
       .catch(() => setSqftPerWeek([]));
   }, []);
 
+  function fillWeeks(data: { week: string; sqft: number; count: number }[]) {
+    if (data.length === 0) return [];
+    const weeks = data.map(d => d.week).sort();
+    const start = new Date(weeks[0]);
+    const end = new Date(weeks[weeks.length - 1]);
+    const allWeeks: { week: string; sqft: number; count: number }[] = [];
+    let current = new Date(start);
+    const weekSet = new Set(weeks);
+    while (current <= end) {
+      const weekStr = current.toISOString().slice(0, 10);
+      const found = data.find(d => d.week === weekStr);
+      allWeeks.push(found ?? { week: weekStr, sqft: 0, count: 0 });
+      current.setDate(current.getDate() + 7);
+    }
+    return allWeeks;
+  }
+
   return (
     <div className="flex flex-col gap-8">
       {/* KPI Cards */}
@@ -97,16 +115,30 @@ export default function DashboardOverview() {
 
       {/* Sqft Production per Week - Full Width */}
       <div className="bg-white shadow rounded-2xl p-6 w-full">
-        <h2 className="text-lg font-semibold mb-4">Sqft Production per Week</h2>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={sqftPerWeek}>
+        <h2 className="text-lg font-semibold mb-4">Sqft & Panel Count per Week</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={fillWeeks(sqftPerWeek)}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="week" />
-            <YAxis label={{ value: 'Sqft', angle: -90, position: 'insideLeft' }} />
+            <XAxis
+              dataKey="week"
+              angle={-30}
+              textAnchor="end"
+              interval={Math.ceil(fillWeeks(sqftPerWeek).length / 26)} // show about 8 labels
+              height={50}
+              tickFormatter={week => {
+                const d = new Date(week);
+                const weekNum = getISOWeek(d);
+                const year = getISOWeekYear(d);
+                return `${year}-W${weekNum.toString().padStart(2, '0')}`;
+              }}
+            />
+            <YAxis yAxisId="left" label={{ value: 'Sqft', angle: -90, position: 'insideLeft' }} />
+            <YAxis yAxisId="right" orientation="right" label={{ value: 'Panels', angle: 90, position: 'insideRight' }} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="sqft" stroke="#10b981" name="Sqft" />
-          </LineChart>
+            <Bar yAxisId="right" dataKey="count" fill="#2563eb" name="Panels" />
+            <Line yAxisId="left" type="monotone" dataKey="sqft" stroke="#10b981" name="Sqft" />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 

@@ -99,7 +99,12 @@ const sortedSummaries = [...summaries].sort((a, b) => {
                   {summary.status}
                 </span>
               </td>
-              <td className="px-4 py-2">{summary.percentComplete}%</td>
+              <td className="px-4 py-2">
+  {summary.totalPanels > 0
+    ? Math.round((summary.completedCount / summary.totalPanels) * 100)
+    : 0
+  }%
+</td>
               <td className="px-4 py-2">{summary.totalPanels}</td>
               <td className="px-4 py-2">{summary.completedCount}</td>
               <td className="px-4 py-2">{formatTime(summary.totalCycleTime)}</td>

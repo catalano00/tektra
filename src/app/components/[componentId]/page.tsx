@@ -30,7 +30,7 @@ export default function ComponentDetailsPage() {
   if (!component) return <p className="p-6 text-red-500">Component not found.</p>
 
   return (
-    <main className="p-6 max-w-5xl mx-auto">
+    <main className="p-6 max-w-4xl w-full mx-auto">
       <h1 className="text-2xl font-bold mb-4">Component Details</h1>
 
       <div className="bg-white rounded shadow p-4 mb-6">
@@ -66,7 +66,7 @@ export default function ComponentDetailsPage() {
       <h2 className="text-xl font-semibold mb-2">Part List</h2>
       <div className="overflow-x-auto bg-white rounded shadow p-4 mb-6">
         {component.part?.length ? (
-          <table className="min-w-full text-sm table-auto">
+          <table className="min-w-[700px] w-full text-sm table-auto">
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-2 text-left">Label</th>
@@ -95,7 +95,7 @@ export default function ComponentDetailsPage() {
       <h2 className="text-xl font-semibold mb-2">Connectors</h2>
       <div className="overflow-x-auto bg-white rounded shadow p-4 mb-6">
         {component.connectors?.length ? (
-          <table className="min-w-full text-sm table-auto">
+          <table className="min-w-[700px] w-full text-sm table-auto">
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-2 text-left">Type</th>
@@ -124,7 +124,7 @@ export default function ComponentDetailsPage() {
       <h2 className="text-xl font-semibold mb-2">Framing TL</h2>
       <div className="overflow-x-auto bg-white rounded shadow p-4 mb-6">
         {component.framingTL?.length ? (
-          <table className="min-w-full text-sm table-auto">
+          <table className="min-w-[700px] w-full text-sm table-auto">
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-2 text-left">Name</th>
@@ -165,7 +165,7 @@ export default function ComponentDetailsPage() {
       <h2 className="text-xl font-semibold mb-2">Time Entries</h2>
       <div className="overflow-x-auto bg-white rounded shadow p-4 mb-6">
         {component.timeEntries?.length ? (
-          <table className="min-w-full text-sm table-auto">
+          <table className="min-w-[900px] w-full text-sm table-auto">
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-2 text-left">Process</th>

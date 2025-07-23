@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { formatTime } from '@/utils/format';
 
 export default function ComponentBrowserPage() {
   const [components, setComponents] = useState<any[]>([])
@@ -99,40 +100,50 @@ export default function ComponentBrowserPage() {
                 <th className="px-4 py-2 text-left text-sm font-semibold">Status</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Project</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Design</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold">Cycle Time</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {filtered.map((comp) => (
-                <tr key={comp.id}>
-                  <td className="px-4 py-2 text-sm font-mono">{comp.componentId}</td>
-                  <td className="px-4 py-2 text-sm">{comp.componentType}</td>
-                  <td className="px-4 py-2 text-sm">{comp.currentStatus}</td>
-                  <td className="px-4 py-2 text-sm">{comp.projectId}</td>
-                  <td className="px-4 py-2 text-sm">
-                    {comp.designUrl ? (
-                      <a
-                        href={comp.designUrl}
-                        className="text-blue-600 underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
+              {filtered.map((comp) => {
+                // Calculate cycle time as sum of durations in timeEntries
+                const cycleTime =
+                  comp.timeEntries?.reduce((sum: number, entry: any) => sum + (entry.duration || 0), 0) || 0;
+                // Use formatTime for consistency
+                const formattedCycleTime = formatTime(cycleTime);
+
+                return (
+                  <tr key={comp.id}>
+                    <td className="px-4 py-2 text-sm font-mono">{comp.componentId}</td>
+                    <td className="px-4 py-2 text-sm">{comp.componentType}</td>
+                    <td className="px-4 py-2 text-sm">{comp.currentStatus}</td>
+                    <td className="px-4 py-2 text-sm">{comp.projectId}</td>
+                    <td className="px-4 py-2 text-sm">
+                      {comp.designUrl ? (
+                        <a
+                          href={comp.designUrl}
+                          className="text-blue-600 underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View PDF
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-sm">{formattedCycleTime}</td>
+                    <td className="px-4 py-2 text-sm">
+                      <button
+                        onClick={() => router.push(`/components/${comp.id}`)}
+                        className="text-sm text-blue-600 underline"
                       >
-                        View PDF
-                      </a>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-sm">
-                    <button
-                      onClick={() => router.push(`/components/${comp.id}`)}
-                      className="text-sm text-blue-600 underline"
-                    >
-                      View Details
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

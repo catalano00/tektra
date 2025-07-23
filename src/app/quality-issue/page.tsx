@@ -70,125 +70,186 @@ export default function QualityIssuePage() {
   const totalCycleSeconds = timeEntries.reduce((sum, entry) => sum + (entry.duration || 0), 0);
   const formatTime = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
-const handleSubmit = async () => {
-  try {
-    const res = await fetch("/api/quality-issue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        componentId: componentUUID,
-        componentCode: componentData?.componentCode || componentUUID, // ✅ add this
-        process,
-        issueCode,
-        engineeringAction,
-        notes,
-        training,
-        teamLead: timeEntries.at(-1)?.teamLead || '', // ✅ add this if needed
-      }),
-    });
+  const handleSubmit = async () => {
+    try {
+      const res = await fetch("/api/quality-issue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          componentId: componentUUID,
+          componentCode: componentData?.componentCode || componentUUID,
+          process,
+          issueCode,
+          engineeringAction,
+          notes,
+          training,
+          teamLead: timeEntries.at(-1)?.teamLead || '',
+        }),
+      });
 
-    if (!res.ok) {
-      throw new Error(await res.text());
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      alert("✅ Quality issue submitted.");
+      router.push(`/project/${projectName}`);
+    } catch (err) {
+      console.error("Error submitting quality issue:", err);
+      alert("Failed to submit quality issue.");
     }
+  };
 
-    alert("✅ Quality issue submitted.");
-    router.push(`/project/${projectName}`);
-  } catch (err) {
-    console.error("Error submitting quality issue:", err);
-    alert("Failed to submit quality issue.");
-  }
-};
+  const handleReturnToProject = async () => {
+    try {
+      // Find the last process from timeEntries (or use a fallback)
+      const lastProcess = timeEntries.length > 0
+        ? timeEntries[timeEntries.length - 1].process
+        : process;
+
+      // Update the component status to last process and paused
+      await fetch(`/api/components/${componentUUID}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentStatus: lastProcess,
+          processStatus: "Paused",
+        }),
+      });
+
+      router.push(`/project/${projectName}`);
+    } catch (err) {
+      alert("Failed to reset status before returning to project.");
+      router.push(`/project/${projectName}`);
+    }
+  };
+
+  // Determine if form is valid
+  const isFormValid = issueCode.trim() !== "" && engineeringAction.trim() !== "";
 
   return (
-    <div className="max-w-3xl mx-auto mt-8 p-6 bg-white shadow rounded-xl space-y-6">
-      <h1 className="text-2xl font-bold">Report Quality Issue</h1>
+    <div className="max-w-3xl w-full mx-auto mt-8 p-4 sm:p-8 bg-white shadow-lg rounded-2xl space-y-8">
+      <h1 className="text-3xl font-bold mb-2 text-center">Report Quality Issue</h1>
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Info Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
         <div>
-          <label className="block font-medium">Project Name</label>
-          <input value={projectName} readOnly className="input w-full" />
+          <div className="block text-gray-600 text-sm font-medium mb-1">Project Name</div>
+          <div className="w-full bg-gray-100 rounded px-3 py-2 font-semibold">{projectName}</div>
         </div>
         <div>
-          <label className="block font-medium">Component #</label>
-          <input value={componentData?.componentCode || componentUUID} readOnly className="input w-full" />
+          <div className="block text-gray-600 text-sm font-medium mb-1">Component #</div>
+          <div className="w-full bg-gray-100 rounded px-3 py-2 font-semibold">{componentData?.componentCode || componentUUID}</div>
         </div>
         <div>
-          <label className="block font-medium">Process</label>
-          <input value={process} readOnly className="input w-full" />
+          <div className="block text-gray-600 text-sm font-medium mb-1">Process</div>
+          <div className="w-full bg-gray-100 rounded px-3 py-2">{process}</div>
         </div>
         <div>
-          <label className="block font-medium">Last Updated</label>
-          <input
-            value={componentData?.updatedAt ? formatDate(new Date(componentData.updatedAt)) : ''}
-            readOnly
-            className="input w-full"
-          />
+          <div className="block text-gray-600 text-sm font-medium mb-1">Last Updated</div>
+          <div className="w-full bg-gray-100 rounded px-3 py-2">
+            {componentData?.updatedAt ? formatDate(new Date(componentData.updatedAt)) : ''}
+          </div>
         </div>
         <div>
-          <label className="block font-medium">Team Lead</label>
-          <input
-            value={timeEntries.at(-1)?.teamLead || ''}
-            readOnly
-            className="input w-full"
-          />
-        </div>
-        <div>
-          <label className="block font-medium">Issue Code</label>
-          <select
-            value={issueCode}
-            onChange={(e) => setIssueCode(e.target.value)}
-            className="input w-full"
-          >
-            <option value="">Select Issue Code</option>
-            {codes.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.code} - {item.label}
-              </option>
-            ))}
-          </select>
+          <div className="block text-gray-600 text-sm font-medium mb-1">Team Lead</div>
+          <div className="w-full bg-gray-100 rounded px-3 py-2">{timeEntries.at(-1)?.teamLead || ''}</div>
         </div>
       </div>
 
-      <div>
-        <h2 className="font-semibold text-lg mt-6 mb-2">Process Timeline</h2>
-        <ul className="list-disc list-inside">
+      {/* User Input Section */}
+      <div className="space-y-6">
+        <h2 className="font-semibold text-lg text-gray-700">Quality Issue Details</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block font-medium mb-1 text-gray-800">
+              Issue Code <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={issueCode}
+              onChange={(e) => setIssueCode(e.target.value)}
+              className="input w-full border-blue-500 focus:ring focus:ring-blue-200 bg-gray-50"
+              required
+            >
+              <option value="">Select Issue Code</option>
+              {codes.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.code} - {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block font-medium mb-1 text-gray-800">
+              Engineering, Rework, or Corrective Action <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={engineeringAction}
+              onChange={(e) => setEngineeringAction(e.target.value)}
+              className="input w-full h-24 border-blue-500 focus:ring focus:ring-blue-200 bg-gray-50"
+              placeholder="Describe any engineering or corrective actions taken..."
+              required
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block font-medium mb-1 text-gray-800">
+            Notes or Comments
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="input w-full h-24 border-blue-500 focus:ring focus:ring-blue-200 bg-gray-50"
+            placeholder="Add any additional notes or comments here..."
+          />
+        </div>
+        <div>
+          <label className="block font-medium mb-1 text-gray-800">
+            Training or Other Action
+          </label>
+          <textarea
+            value={training}
+            onChange={(e) => setTraining(e.target.value)}
+            className="input w-full h-24 border-blue-500 focus:ring focus:ring-blue-200 bg-gray-50"
+            placeholder="Describe any training or other actions taken..."
+          />
+        </div>
+      </div>
+
+      {/* Timeline Section */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h2 className="font-semibold text-lg mb-2 text-gray-700">Process Timeline</h2>
+        <ul className="list-disc list-inside text-gray-700 text-sm">
           {timeEntries.map(entry => (
             <li key={`${entry.process}-${entry.updatedAt}`}>
-              {entry.process} - Created: {formatDate(new Date(entry.createdAt))} | Updated: {formatDate(new Date(entry.updatedAt))}
+              <span className="font-semibold">{entry.process}</span> – Created: {formatDate(new Date(entry.createdAt))} | Updated: {formatDate(new Date(entry.updatedAt))}
             </li>
           ))}
         </ul>
-        <p className="mt-2 font-medium">Total Cycle Time: {formatTime(totalCycleSeconds)}</p>
+        <p className="mt-2 font-medium text-gray-800">
+          Total Cycle Time: <span className="font-mono">{formatTime(totalCycleSeconds)}</span>
+        </p>
       </div>
 
-      <div>
-        <label className="block font-medium">Engineering, Rework, or Corrective Action</label>
-        <textarea
-          value={engineeringAction}
-          onChange={(e) => setEngineeringAction(e.target.value)}
-          className="input w-full h-24"
-        />
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={handleReturnToProject}
+          className="w-full py-3 text-lg rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
+        >
+          Return to Project
+        </button>
+        <button
+          onClick={handleSubmit}
+          className={`w-full py-3 text-lg mt-2 rounded ${
+            isFormValid
+              ? "btn btn-primary bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          }`}
+          disabled={!isFormValid}
+        >
+          Submit Quality Issue
+        </button>
       </div>
-
-      <div>
-        <label className="block font-medium">Notes or Comments</label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="input w-full h-24"
-        />
-      </div>
-
-      <div>
-        <label className="block font-medium">Training or Other Action</label>
-        <textarea
-          value={training}
-          onChange={(e) => setTraining(e.target.value)}
-          className="input w-full h-24"
-        />
-      </div>
-
-      <button onClick={handleSubmit} className="btn btn-primary w-full">Submit Quality Issue</button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatTime } from '@/utils/format';
 
 type Activity = {
   id: string;
@@ -11,32 +12,25 @@ type Activity = {
   status: string;
   teamLead: string;
   timestamp: string;
-  cycleTimeSeconds: number;
+  duration: number; // <-- use duration instead of cycleTimeSeconds
   percentComplete: number;
 };
-
-function formatDuration(seconds: number) {
-  if (typeof seconds !== 'number' || isNaN(seconds)) return 'N/A';
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
 
 export default function ActivityPage() {
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
 
-    useEffect(() => {
-      fetch('/api/v1/activity')
-        .then(res => res.json())
-        .then(data => {
-          // Try these depending on your API
-          if (Array.isArray(data)) setActivityFeed(data);
-          else if (Array.isArray(data.activities)) setActivityFeed(data.activities);
-          else if (Array.isArray(data.data)) setActivityFeed(data.data);
-          else setActivityFeed([]);
-        })
-        .catch(() => setActivityFeed([]));
-    }, []);
+  useEffect(() => {
+    fetch('/api/v1/activity')
+      .then(res => res.json())
+      .then(data => {
+        // Try these depending on your API
+        if (Array.isArray(data)) setActivityFeed(data);
+        else if (Array.isArray(data.activities)) setActivityFeed(data.activities);
+        else if (Array.isArray(data.data)) setActivityFeed(data.data);
+        else setActivityFeed([]);
+      })
+      .catch(() => setActivityFeed([]));
+  }, []);
 
   return (
     <div className="p-6">
@@ -66,7 +60,7 @@ export default function ActivityPage() {
                 <td className="px-4 py-2">{entry.process}</td>
                 <td className="px-4 py-2 capitalize">{entry.status}</td>
                 <td className="px-4 py-2">{entry.teamLead}</td>
-                <td className="px-4 py-2">{formatDuration(entry.cycleTimeSeconds)}</td>
+                <td className="px-4 py-2">{formatTime(entry.duration)}</td>
                 <td className="px-4 py-2">
                   <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
                     <div
