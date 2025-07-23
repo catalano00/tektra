@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '5');
+    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '7');
 
     const entries = await prisma.timeEntry.findMany({
       take: limit,

@@ -25,12 +25,18 @@ function formatDuration(seconds: number) {
 export default function ActivityPage() {
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
 
-  useEffect(() => {
-    fetch('/api/activity')
-      .then(res => res.json())
-      .then(data => setActivityFeed(Array.isArray(data) ? data : []))
-      .catch(() => setActivityFeed([]));
-  }, []);
+    useEffect(() => {
+      fetch('/api/v1/activity')
+        .then(res => res.json())
+        .then(data => {
+          // Try these depending on your API
+          if (Array.isArray(data)) setActivityFeed(data);
+          else if (Array.isArray(data.activities)) setActivityFeed(data.activities);
+          else if (Array.isArray(data.data)) setActivityFeed(data.data);
+          else setActivityFeed([]);
+        })
+        .catch(() => setActivityFeed([]));
+    }, []);
 
   return (
     <div className="p-6">

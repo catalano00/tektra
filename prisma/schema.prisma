@@ -74,8 +74,7 @@ model Component {
 
   timeEntries      TimeEntry[]
   qualityIssues    QualityIssue[] // ✅ back-reference
-  Project          Project?       @relation(fields: [projectProjectId], references: [projectId])
-  projectProjectId String?
+  Project          Project        @relation(fields: [projectId], references: [projectId])
   part             Part[]
   sheathing        Sheathing?
   connectors       Connectors?

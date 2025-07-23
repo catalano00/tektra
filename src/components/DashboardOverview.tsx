@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { formatTime } from '@/utils/format';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, LineChart, Line,
+} from 'recharts';
 
 type RecentProject = {
   projectId: string;
-  componentId?: string; // ← Prisma doesn't show `name` in your model, so remove or adjust if needed
+  componentId?: string;
   currentStatus: string;
   updatedAt?: string;
 };
@@ -32,98 +35,149 @@ export default function DashboardOverview() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
+  const [cycleTimeByType, setCycleTimeByType] = useState<{ type: string; avgCycleTime: number }[]>([]);
+  const [sqftPerWeek, setSqftPerWeek] = useState<{ week: string; sqft: number }[]>([]);
 
   useEffect(() => {
-  // Recent Projects
-  fetch('/api/projects/recent?limit=3')
-    .then(res => res.json())
-    .then(data => {
-      console.log('recentProjects API response:', data);
-      setRecentProjects(Array.isArray(data) ? data : []);
-    })
-    .catch(err => {
-      console.error("Recent projects fetch failed", err);
-      setRecentProjects([]);
-    });
+    fetch('/api/projects/recent?limit=3')
+      .then(res => res.json())
+      .then(data => {
+        setRecentProjects(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setRecentProjects([]));
 
-  // Dashboard Metrics
-  fetch("/api/metrics/dashboard")
-    .then(res => {
-      if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
-      return res.json();
-    })
-    .then(setMetrics)
-    .catch(err => {
-      console.error("Dashboard metrics fetch failed", err);
-      setMetrics(null);
-    });
+    fetch("/api/metrics/dashboard")
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
+        return res.json();
+      })
+      .then(setMetrics)
+      .catch(() => setMetrics(null));
 
-  // Activity Feed
-  fetch("/api/activity?limit=5")
-    .then(async (res) => {
-  if (!res.ok) throw new Error("Failed to fetch recent activity");
-  const data = await res.json();
-  setActivityFeed(Array.isArray(data.activities) ? data.activities : []);
-  })
-.catch((err) => {
-  console.error("Activity fetch failed", err);
-  setActivityFeed([]);
-  });
+    fetch("/api/activity?limit=5")
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed to fetch recent activity");
+        const data = await res.json();
+        setActivityFeed(Array.isArray(data.activities) ? data.activities : []);
+      })
+      .catch(() => setActivityFeed([]));
+
+    // Fetch cycle time by panel type
+    fetch('/api/metrics/cycle-time-by-type')
+      .then(res => res.json())
+      .then(data => setCycleTimeByType(Array.isArray(data) ? data : []))
+      .catch(() => setCycleTimeByType([]));
+
+    // Fetch sqft production per week
+    fetch('/api/metrics/sqft-per-week')
+      .then(res => res.json())
+      .then(data => setSqftPerWeek(Array.isArray(data) ? data : []))
+      .catch(() => setSqftPerWeek([]));
   }, []);
 
   return (
-    <div className="grid gap-6">
+    <div className="flex flex-col gap-8">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white shadow rounded-2xl p-4">
-          <h3 className="text-sm text-gray-500">Total Projects</h3>
-          <p className="text-2xl font-bold">{metrics?.totalProjects ?? '-'}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="bg-white shadow rounded-2xl p-6 flex flex-col items-start min-w-[180px]">
+          <h3 className="text-sm text-gray-500 mb-1">Total Projects</h3>
+          <p className="text-3xl font-bold">{metrics?.totalProjects ?? '-'}</p>
         </div>
-        <div className="bg-white shadow rounded-2xl p-4">
-          <h3 className="text-sm text-gray-500">Total Panels</h3>
-          <p className="text-2xl font-bold">{metrics?.completedPanels ?? '-'}</p>
+        <div className="bg-white shadow rounded-2xl p-6 flex flex-col items-start min-w-[180px]">
+          <h3 className="text-sm text-gray-500 mb-1">Total Panels</h3>
+          <p className="text-3xl font-bold">{metrics?.completedPanels ?? '-'}</p>
         </div>
-        <div className="bg-white shadow rounded-2xl p-4">
-          <h3 className="text-sm text-gray-500">Avg Cycle Time</h3>
-          <p className="text-2xl font-bold">
+        <div className="bg-white shadow rounded-2xl p-6 flex flex-col items-start min-w-[180px]">
+          <h3 className="text-sm text-gray-500 mb-1">Avg Cycle Time</h3>
+          <p className="text-3xl font-bold">
             {metrics?.avgCycleTime != null ? formatTime(metrics.avgCycleTime) : '-'}
           </p>
         </div>
       </div>
 
-      {/* Recent Projects */}
-      <div className="bg-white shadow rounded-2xl p-4">
-        <h2 className="text-lg font-semibold mb-2">Recent Projects</h2>
-        <ul className="divide-y divide-gray-200">
-          {recentProjects.map((project, index) => (
-            <li key={project.projectId || `project-${index}`} className="py-2">
-              <div className="font-medium">{project.projectId ?? 'Untitled Project'}</div>
-              <div className="text-sm text-gray-500">
-                Status: {project.currentStatus} · Last updated:{' '}
-                {project.updatedAt
-                  ? new Date(project.updatedAt).toLocaleDateString()
-                  : 'N/A'}
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* Sqft Production per Week - Full Width */}
+      <div className="bg-white shadow rounded-2xl p-6 w-full">
+        <h2 className="text-lg font-semibold mb-4">Sqft Production per Week</h2>
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={sqftPerWeek}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="week" />
+            <YAxis label={{ value: 'Sqft', angle: -90, position: 'insideLeft' }} />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="sqft" stroke="#10b981" name="Sqft" />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
 
-      {/* Activity Feed */}
-      <div className="bg-white shadow rounded-2xl p-4">
-        <h2 className="text-lg font-semibold mb-2">Recent Activity</h2>
-        <ul className="divide-y divide-gray-200">
-          {activityFeed.map((entry, index) => (
-            <li key={entry.id || `activity-${index}`} className="py-2">
-              <div className="font-medium">
-                {entry.componentId} - {entry.process} ({entry.status})
-              </div>
-              <div className="text-sm text-gray-500">
-                {entry.teamLead} ·  {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Invalid Date'}
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* Main Content Tiles with custom column spans */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Cycle Time by Panel Type - spans 2 columns */}
+        <div className="bg-white shadow rounded-2xl p-6 min-w-[250px] md:col-span-2">
+          <h2 className="text-lg font-semibold mb-4">Cycle Time by Panel Type</h2>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart
+              data={cycleTimeByType.map(item => ({
+                ...item,
+                avgCycleTime: Math.round(item.avgCycleTime / 60), // convert seconds to minutes
+              }))}
+              layout="vertical"
+              margin={{ left: 30, right: 20, top: 10, bottom: 10 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                type="number"
+                label={{ value: 'Minutes', angle: 0, position: 'insideBottom', offset: -5 }}
+                tick={{ fontSize: 12 }}
+              />
+              <YAxis
+                dataKey="type"
+                type="category"
+                tick={{ fontSize: 12 }}
+                width={100}
+                label={{ value: 'Panel Type', angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip formatter={v => `${v} min`} />
+              <Legend />
+              <Bar dataKey="avgCycleTime" fill="#2563eb" name="Avg Cycle Time (min)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Recent Projects */}
+        <div className="bg-white shadow rounded-2xl p-6 min-w-[250px]">
+          <h2 className="text-lg font-semibold mb-4">Recent Projects</h2>
+          <ul className="divide-y divide-gray-200">
+            {recentProjects.map((project, index) => (
+              <li key={project.projectId || `project-${index}`} className="py-3">
+                <div className="font-semibold text-base">{project.projectId ?? 'Untitled Project'}</div>
+                <div className="text-sm text-gray-500">
+                  Status: <span className="capitalize">{project.currentStatus}</span> &middot; Last updated:{' '}
+                  {project.updatedAt
+                    ? new Date(project.updatedAt).toLocaleDateString()
+                    : 'N/A'}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Recent Activity - spans all 3 columns */}
+        <div className="bg-white shadow rounded-2xl p-6 min-w-[250px] md:col-span-3">
+          <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
+          <ul className="divide-y divide-gray-200">
+            {activityFeed.map((entry, index) => (
+              <li key={entry.id || `activity-${index}`} className="py-3">
+                <div className="font-semibold text-base">
+                  {entry.componentId} - {entry.process} <span className="text-xs text-gray-400">({entry.status})</span>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {entry.teamLead} &middot; {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Invalid Date'}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );

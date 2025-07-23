@@ -32,14 +32,18 @@ const bottomLinks = [
   { href: '/help', label: 'Help & Support', icon: <HelpCircle size={18} /> },
 ];
 
-export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+type SidebarProps = {
+  collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
+};
+
+export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
   return (
     <div
-      className={`bg-gray-900 text-white h-screen p-4 flex flex-col justify-between transition-all duration-300 ease-in-out ${
+      className={`fixed top-0 left-0 bg-gray-900 text-white h-screen p-4 flex flex-col justify-between transition-all duration-300 ease-in-out z-40 ${
         collapsed ? 'w-20' : 'w-64'
       }`}
     >

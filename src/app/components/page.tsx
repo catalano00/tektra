@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation'
 export default function ComponentBrowserPage() {
   const [components, setComponents] = useState<any[]>([])
   const [typeFilter, setTypeFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [projectOptions, setProjectOptions] = useState<string[]>([]);
   const router = useRouter()
 
   useEffect(() => {
@@ -22,11 +24,19 @@ export default function ComponentBrowserPage() {
       .catch(() => setIsLoading(false))
   }, [])
 
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => setProjectOptions(data.map((p: any) => p.projectId)))
+      .catch(() => setProjectOptions([]));
+  }, []);
+
   const filtered = components.filter((c) => {
+    const matchesProject = !projectFilter || c.projectId === projectFilter
     const matchesType = !typeFilter || c.componentType === typeFilter
     const matchesStatus = !statusFilter || c.currentStatus === statusFilter
     const matchesSearch = !search || c.componentId.toLowerCase().includes(search.toLowerCase()) || c.projectName.toLowerCase().includes(search.toLowerCase())
-    return matchesType && matchesStatus && matchesSearch
+    return matchesType && matchesStatus && matchesSearch && matchesProject
   })
 
   return (
@@ -36,21 +46,32 @@ export default function ComponentBrowserPage() {
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-4 gap-4">
         <input
           type="text"
-          placeholder="Search by component or project"
+          placeholder="Search by component ID"
           className="border p-2 rounded"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select
           className="border p-2 rounded"
+          value={projectFilter}
+          onChange={(e) => setProjectFilter(e.target.value)}
+        >
+          <option value="">All Projects</option>
+          {projectOptions.map((pid) => (
+            <option key={pid} value={pid}>{pid}</option>
+          ))}
+        </select>        
+        <select
+          className="border p-2 rounded"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
         >
           <option value="">All Types</option>
+          <option>Beam</option>
           <option>Interior Wall</option>
           <option>Exterior Wall</option>
-          <option>Roof</option>
-          <option>Floor</option>
+          <option>Roof Panel</option>
+          <option>Floor Panel</option>
         </select>
         <select
           className="border p-2 rounded"
@@ -58,7 +79,7 @@ export default function ComponentBrowserPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           <option value="">All Statuses</option>
-          {['Planned', 'Released for Manufacturing', 'Used', 'Scrapped'].map((status) => (
+          {['Planned', 'Released for Manufacturing', 'Delivered', 'Quality Issue'].map((status) => (
             <option key={status} value={status}>{status}</option>
           ))}
         </select>

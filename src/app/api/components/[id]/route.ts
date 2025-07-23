@@ -39,10 +39,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     timeEntries: {
       orderBy: { updatedAt: 'asc' },
     },
-    Part: true,
-    Sheathing: true,
-    Connectors: true,
-    FramingTL: true,
+    part: true,
+    sheathing: true,
+    connectors: true,
+    framingTL: true,
     },
     });
     
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       teamLead: component.teamLead,
       updatedAt: component.updatedAt,
       projectName: component.Project?.projectId || 'Unknown',
-      sheathing: component.Sheathing,
+      sheathing: component.sheathing,
       timeEntries: component.timeEntries.map((t) => ({
         process: t.process,
         status: t.status,
@@ -73,6 +73,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
       })),
+      part: component.part,
+      connectors: component.connectors,
+      framingTL: component.framingTL,
     });
   } catch (err) {
     console.error('❌ [COMPONENT GET ERROR]', err);
