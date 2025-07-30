@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch parsed results from Docparser
-    const apiKey = 'YOUR_DOCPARSER_API_KEY'; // Replace with your actual API key
+    const apiKey = '9eb56d3111a6969146392cc0e9fcfb038569373c'; // Replace with your actual API key
     const response = await fetch(`https://api.docparser.com/v1/results/${documentId}?api_key=${apiKey}`);
 
     if (!response.ok) {
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const apiKey = 'YOUR_DOCPARSER_API_KEY'; // Replace with your actual API key
+    const apiKey = '9eb56d3111a6969146392cc0e9fcfb038569373c'; // Replace with your actual API key
     const response = await fetch(`https://api.docparser.com/v1/results/${documentId}?api_key=${apiKey}`);
 
     if (!response.ok) {
