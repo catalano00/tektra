@@ -27,8 +27,10 @@ export async function POST(req: NextRequest) {
 
     return new NextResponse(JSON.stringify({ received: true, results: parsedResults }), { status: 200 });
   } catch (error) {
-    console.error('Webhook error:', error);
-    return new NextResponse(JSON.stringify({ received: false, error: error.message }), { status: 500 });
+    // Explicitly cast error to Error type
+    const err = error as Error;
+    console.error('Webhook error:', err);
+    return new NextResponse(JSON.stringify({ received: false, error: err.message }), { status: 500 });
   }
 }
 
@@ -53,7 +55,9 @@ export async function GET(req: NextRequest) {
     const parsedResults = await response.json();
     return new NextResponse(JSON.stringify({ results: parsedResults }), { status: 200 });
   } catch (error) {
-    console.error('Error fetching results:', error);
-    return new NextResponse(JSON.stringify({ error: error.message }), { status: 500 });
+    // Explicitly cast error to Error type
+    const err = error as Error;
+    console.error('Error fetching results:', err);
+    return new NextResponse(JSON.stringify({ error: err.message }), { status: 500 });
   }
 }
