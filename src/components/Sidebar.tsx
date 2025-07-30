@@ -16,6 +16,7 @@ import {
   User,
   LogOut,
   AlertTriangle,
+  ClipboardList,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
@@ -27,6 +28,7 @@ const links = [
   { href: '/components', label: 'Components', icon: <Boxes size={18} /> },
   { href: '/activity', label: 'Activity Feed', icon: <Activity size={18} /> },
   { href: '/quality-issue-summaries', label: 'Quality', icon: <AlertTriangle size={18} /> },
+  { href: '/production-planning', label: 'Production Planning', icon: <ClipboardList size={18} /> },
 ];
 
 const bottomLinks = [

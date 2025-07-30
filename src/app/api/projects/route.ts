@@ -40,9 +40,23 @@ export async function GET(req: NextRequest) {
       };
     }
 
+    // Select more fields for frontend use
     const projects = await prisma.project.findMany({
       select: {
         projectId: true,
+        currentStatus: true,
+        client: true,
+        city: true,
+        state: true,
+        streetaddress: true,
+        contractAmount: true,
+        totalContract: true,
+        buildableSqFt: true,
+        estimatedPanelSqFt: true,
+        expectedDrawingStart: true,
+        expectedProductionStart: true,
+        expectedProductionCompletion: true,
+        notes: true,
       },
       orderBy: { projectId: 'asc' },
     });
