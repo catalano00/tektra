@@ -1,4 +1,18 @@
-import { prisma } from '@/lib/prisma';import { NextRequest, NextResponse } from 'next/server';export async function GET(req: NextRequest, { params }: { params: { projectId: string } }) {  try {    const { projectId } = params;    const project = await prisma.project.findUnique({      where: { projectId },      select: {        projectId: true,        currentStatus: true,        client: true,        city: true,        state: true,        streetaddress: true,
+import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(req: NextRequest, { params }: { params: { projectId: string } }) {
+  try {
+    const projectId = params.projectId;
+    const project = await prisma.project.findUnique({
+      where: { projectId },
+      select: {
+        projectId: true,
+        currentStatus: true,
+        client: true,
+        city: true,
+        state: true,
+        streetaddress: true,
         contractAmount: true,
         totalContract: true,
         buildableSqFt: true,
