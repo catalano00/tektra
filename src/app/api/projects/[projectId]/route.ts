@@ -1,9 +1,16 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(req: NextRequest, { params }: { params: { projectId: string } }) {
+export async function GET(req: NextRequest) {
   try {
-    const projectId = params.projectId;
+    // Extract the projectId from the URL
+    const url = new URL(req.url);
+    const projectId = url.pathname.split('/').pop(); // Extract the last part of the URL
+
+    if (!projectId) {
+      return NextResponse.json({ error: 'Missing projectId' }, { status: 400 });
+    }
+
     const project = await prisma.project.findUnique({
       where: { projectId },
       select: {
