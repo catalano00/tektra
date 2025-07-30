@@ -35,10 +35,18 @@ export default function QualityIssueClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const projectName = searchParams.get("projectName") || ""
-  const componentUUID = searchParams.get("componentId") || ""
-  const process = searchParams.get("process") || "Cut"
+  // Initial values from URL
+  const initialComponentId = searchParams.get("componentId") || ""
+  const initialProjectName = searchParams.get("projectName") || ""
+  const initialProcess = searchParams.get("process") || ""
 
+  // State
+  const [projectName, setProjectName] = useState(initialProjectName)
+  const [componentUUID, setComponentUUID] = useState(initialComponentId)
+  const [process, setProcess] = useState(initialProcess)
+  const [projectOptions, setProjectOptions] = useState<string[]>([])
+  const [componentOptions, setComponentOptions] = useState<string[]>([])
+  const [processOptions, setProcessOptions] = useState<string[]>([])
   const [issueCode, setIssueCode] = useState("")
   const [engineeringAction, setEngineeringAction] = useState("")
   const [notes, setNotes] = useState("")
@@ -48,15 +56,93 @@ export default function QualityIssueClient() {
 
   const codes = ISSUE_CODES[process as keyof typeof ISSUE_CODES] || DEFAULT_CODES
 
+  // Fetch all projects on mount
   useEffect(() => {
-    if (!componentUUID) return
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => setProjectOptions(data.map((p: any) => p.projectId)))
+      .catch(() => setProjectOptions([]));
+  }, [])
+
+  // If componentId is present, fetch its data and set project accordingly
+  useEffect(() => {
+    if (initialComponentId) {
+      fetch(`/api/components/${initialComponentId}`)
+        .then(res => res.json())
+        .then(data => {
+          setComponentData(data)
+          setTimeEntries(data.timeEntries || [])
+          setProjectName(data.projectId || "")
+          setComponentUUID(initialComponentId)
+          // Set process options based on timeEntries
+          const uniqueProcesses = Array.from(new Set((data.timeEntries || []).map((te: any) => String(te.process)))) as string[]
+          setProcessOptions(uniqueProcesses)
+          if (!uniqueProcesses.includes(process)) {
+              setProcess(uniqueProcesses[0] || "")
+          }
+        })
+        .catch(() => {
+          setComponentData(null)
+          setTimeEntries([])
+          setProcessOptions([])
+          setProcess("")
+        })
+    }
+  // Only run on initial mount if componentId is present
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Fetch components for selected project
+  useEffect(() => {
+    if (!projectName) {
+      setComponentOptions([])
+      setComponentUUID("")
+      return
+    }
+    fetch(`/api/components?projectId=${projectName}`)
+      .then(res => res.json())
+      .then(data => {
+        const ids = data.map((c: any) => c.componentId)
+        setComponentOptions(ids)
+        // If the selected component is not in the new list, clear it
+        if (componentUUID && !ids.includes(componentUUID)) {
+          setComponentUUID("")
+          setComponentData(null)
+          setTimeEntries([])
+          setProcessOptions([])
+          setProcess("")
+        }
+      })
+      .catch(() => setComponentOptions([]));
+  }, [projectName])
+
+  // When component changes (from dropdown), fetch its data and timeEntries
+  useEffect(() => {
+    if (!componentUUID) {
+      setComponentData(null)
+      setTimeEntries([])
+      setProcessOptions([])
+      setProcess("")
+      return
+    }
     fetch(`/api/components/${componentUUID}`)
       .then(res => res.json())
       .then(data => {
         setComponentData(data)
         setTimeEntries(data.timeEntries || [])
+        // Set process options based on timeEntries
+        const uniqueProcesses = Array.from(new Set((data.timeEntries || []).map((te: any) => String(te.process)))) as string[]
+        setProcessOptions(uniqueProcesses)
+        if (!uniqueProcesses.includes(process)) {
+          setProcess(String(uniqueProcesses[0] ?? ""))
+        }
       })
-      .catch(console.error)
+      .catch(() => {
+        setComponentData(null)
+        setTimeEntries([])
+        setProcessOptions([])
+        setProcess("")
+      })
   }, [componentUUID])
 
   const totalCycleSeconds = timeEntries.reduce((sum, entry) => sum + (entry.duration || 0), 0)
@@ -76,6 +162,7 @@ export default function QualityIssueClient() {
           notes,
           training,
           teamLead: timeEntries.at(-1)?.teamLead || '',
+          projectName,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -102,32 +189,59 @@ export default function QualityIssueClient() {
     }
   }
 
-  const isFormValid = issueCode.trim() !== "" && engineeringAction.trim() !== ""
+  const isFormValid = issueCode.trim() !== "" && engineeringAction.trim() !== "" && projectName && componentUUID && process
 
   return (
     <div className="max-w-3xl w-full mx-auto mt-8 p-4 sm:p-8 bg-white shadow-lg rounded-2xl space-y-8">
       <h1 className="text-3xl font-bold mb-2 text-center">Report Quality Issue</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
         <div>
-          <div className="block text-gray-600 text-sm font-medium mb-1">Project Name</div>
-          <div className="w-full bg-gray-100 rounded px-3 py-2 font-semibold">{projectName}</div>
+          <label className="block text-gray-600 text-sm font-medium mb-1">Project Name</label>
+          <select
+            className="w-full bg-gray-100 rounded px-3 py-2 font-semibold"
+            value={projectName}
+            onChange={e => setProjectName(e.target.value)}
+          >
+            <option value="">Select Project</option>
+            {projectOptions.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
         </div>
         <div>
-          <div className="block text-gray-600 text-sm font-medium mb-1">Component #</div>
-          <div className="w-full bg-gray-100 rounded px-3 py-2 font-semibold">{componentData?.componentCode || componentUUID}</div>
+          <label className="block text-gray-600 text-sm font-medium mb-1">Component #</label>
+          <select
+            className="w-full bg-gray-100 rounded px-3 py-2 font-semibold"
+            value={componentUUID}
+            onChange={e => setComponentUUID(e.target.value)}
+          >
+            <option value="">Select Component</option>
+            {componentOptions.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
         <div>
-          <div className="block text-gray-600 text-sm font-medium mb-1">Process</div>
-          <div className="w-full bg-gray-100 rounded px-3 py-2">{process}</div>
+          <label className="block text-gray-600 text-sm font-medium mb-1">Process</label>
+          <select
+            className="w-full bg-gray-100 rounded px-3 py-2"
+            value={process}
+            onChange={e => setProcess(e.target.value)}
+          >
+            <option value="">Select Process</option>
+            {processOptions.map(proc => (
+              <option key={proc} value={proc}>{proc}</option>
+            ))}
+          </select>
         </div>
         <div>
-          <div className="block text-gray-600 text-sm font-medium mb-1">Last Updated</div>
+          <label className="block text-gray-600 text-sm font-medium mb-1">Last Updated</label>
           <div className="w-full bg-gray-100 rounded px-3 py-2">
             {componentData?.updatedAt ? formatDate(new Date(componentData.updatedAt)) : ''}
           </div>
         </div>
         <div>
-          <div className="block text-gray-600 text-sm font-medium mb-1">Team Lead</div>
+          <label className="block text-gray-600 text-sm font-medium mb-1">Team Lead</label>
           <div className="w-full bg-gray-100 rounded px-3 py-2">{timeEntries.at(-1)?.teamLead || ''}</div>
         </div>
       </div>

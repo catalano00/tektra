@@ -56,6 +56,6 @@ export async function GET() {
     return NextResponse.json(summary);
   } catch (error) {
     console.error('❌ Failed to load project summaries:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
