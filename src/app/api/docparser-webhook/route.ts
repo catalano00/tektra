@@ -1,63 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma'; // Example using Prisma ORM
 
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
-    console.log('Docparser Webhook Data:', data);
+    const json = await req.json();
+    console.log('Docparser Webhook Data:', json);
 
-    const documentId = data.document_id;
+    // Insert into Component table
+    await prisma.component.create({
+      data: {
+        id: json.document_id,
+        componentId: json.panellabel, // Added missing comma here
+        componentType: json.sheettitle,
+        currentStatus: 'processed',
+        designUrl: json.media_link,
+        createdAt: new Date(json.uploaded_at),
+        updatedAt: new Date(json.processed_at),
+        percentComplete: 0, // or set to a value from json if available
+        Project: {
+          connect: { projectId: json.project_id }, // replace 'projectId' with your actual unique field name if different
+        },
+      },
+    });
 
-    if (!documentId) {
-      console.error('Missing document_id in webhook payload');
-      return new NextResponse(JSON.stringify({ error: 'Missing document_id' }), { status: 400 });
+    // Insert into Part table
+    for (const part of json.assemblypartlist) {
+      await prisma.part.create({
+        data: {
+          componentId: json.document_id,
+          size: part.key_0,
+          label: part.key_1,
+          count: parseInt(part.key_2, 10),
+          cutLength: part.key_3,
+        },
+      });
     }
 
-    // Fetch parsed results from Docparser
-    const apiKey = '9eb56d3111a6969146392cc0e9fcfb038569373c'; // Replace with your actual API key
-    const response = await fetch(`https://api.docparser.com/v1/results/${documentId}?api_key=${apiKey}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error fetching Docparser results:', errorText);
-      return new NextResponse(JSON.stringify({ error: 'Failed to fetch results' }), { status: 500 });
+    // Insert into FramingTL table
+    for (const framing of json.framingtl) {
+      await prisma.framingTL.create({
+        data: {
+          componentId: json.document_id,
+          ftype: framing.key_0,
+          totalLength: framing.key_1,
+          count: parseInt(framing.key_2, 10),
+          componentCode: framing.componentCode ?? '', // Provide appropriate value or fallback
+          component: framing.component ?? '', // Provide appropriate value or fallback
+        },
+      });
     }
 
-    const parsedResults = await response.json();
-    console.log('Parsed Results:', parsedResults);
-
-    return new NextResponse(JSON.stringify({ received: true, results: parsedResults }), { status: 200 });
+    return new NextResponse(JSON.stringify({ received: true }), { status: 200 });
   } catch (error) {
-    // Explicitly cast error to Error type
     const err = error as Error;
     console.error('Webhook error:', err);
     return new NextResponse(JSON.stringify({ received: false, error: err.message }), { status: 500 });
-  }
-}
-
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const documentId = searchParams.get('documentId');
-
-  if (!documentId) {
-    return new NextResponse(JSON.stringify({ error: 'Missing documentId' }), { status: 400 });
-  }
-
-  try {
-    const apiKey = '9eb56d3111a6969146392cc0e9fcfb038569373c'; // Replace with your actual API key
-    const response = await fetch(`https://api.docparser.com/v1/results/${documentId}?api_key=${apiKey}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error fetching Docparser results:', errorText);
-      return new NextResponse(JSON.stringify({ error: 'Failed to fetch results' }), { status: 500 });
-    }
-
-    const parsedResults = await response.json();
-    return new NextResponse(JSON.stringify({ results: parsedResults }), { status: 200 });
-  } catch (error) {
-    // Explicitly cast error to Error type
-    const err = error as Error;
-    console.error('Error fetching results:', err);
-    return new NextResponse(JSON.stringify({ error: err.message }), { status: 500 });
   }
 }
