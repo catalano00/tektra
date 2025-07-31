@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'; // Example using Prisma ORM
 export async function POST(req: NextRequest) {
   try {
     const json = await req.json();
-    console.log('Docparser Webhook Data:', json);
+    console.log('Received Webhook Payload:', json);
 
     // Insert into Component table
     await prisma.component.create({
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date(json.processed_at),
         percentComplete: 0, // or set to a value from json if available
         Project: {
-          connect: { projectId: json.project_id }, // replace 'projectId' with your actual unique field name if different
+          connect: { projectId: 'TEK-028-CHAROUHIS' }, // replace 'projectId' with your actual unique field name if different
         },
       },
     });
