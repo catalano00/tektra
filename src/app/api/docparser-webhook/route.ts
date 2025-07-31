@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
-    console.log('Docparser Webhook Data:', data);
+    const json = await req.json();
+    console.log('Received Webhook Payload:', json);
 
-    // Extract document ID from the webhook data
-    const documentId = data.document_id;
-
-    // Process the data or store the document ID for later retrieval
-    // You can now fetch the results from Docparser using the document ID
+    // Store raw data in the staging table
+    await prisma.stagingData.create({
+      data: {
+        rawData: json,
+        status: 'pending', // Initial status
+      },
+    });
 
     return new NextResponse(JSON.stringify({ received: true }), { status: 200 });
   } catch (error) {
-    console.error('Webhook error:', error);
-    return new NextResponse(JSON.stringify({ received: false }), { status: 500 });
+    const err = error as Error;
+    console.error('Webhook error:', err);
+    return new NextResponse(JSON.stringify({ received: false, error: err.message }), { status: 500 });
   }
 }

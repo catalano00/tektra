@@ -146,3 +146,11 @@ model QualityIssue {
 
   component Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
 }
+
+model StagingData {
+  id          String   @id @default(uuid()) // Unique identifier for each entry
+  rawData     Json     // Store the raw JSON payload
+  status      String   @default("pending") // Status: pending, processed, failed
+  createdAt   DateTime @default(now()) // Timestamp for when the data was received
+  updatedAt   DateTime @updatedAt // Automatically updated timestamp
+}
