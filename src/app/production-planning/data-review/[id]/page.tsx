@@ -187,49 +187,83 @@ function EditableTable<T>({
 function BlobFileViewer({ url }: { url: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!url) {
+      setError('No file URL provided');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      setError('Invalid file URL format');
+      return;
+    }
+
     async function fetchBlob() {
+      setLoading(true);
+      setError(null);
+      
       try {
         const response = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
         if (!response.ok) {
-          throw new Error('Failed to fetch file');
+          throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
         }
 
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
         setBlobUrl(objectUrl);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
+        console.error('BlobFileViewer fetch error:', err);
+        setError(err instanceof Error ? err.message : 'Unknown error occurred while loading file');
+      } finally {
+        setLoading(false);
       }
     }
 
     fetchBlob();
 
-    // Cleanup the object URL when the component is unmounted
+    // Cleanup the object URL when the component is unmounted or URL changes
     return () => {
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [url]);
+  }, [url]); // Added url as dependency
+
+  if (loading) {
+    return <div className="text-gray-500 flex items-center justify-center h-full">Loading file...</div>;
+  }
 
   if (error) {
-    return <div className="text-red-500">Error: {error}</div>;
+    return (
+      <div className="text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
+        <div className="font-semibold mb-2">Error loading file:</div>
+        <div className="text-sm">{error}</div>
+        {url && (
+          <div className="text-xs mt-2 text-gray-600">
+            URL: {url}
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (!blobUrl) {
-    return <div className="text-gray-500">Loading file...</div>;
+    return <div className="text-gray-500 flex items-center justify-center h-full">Preparing file...</div>;
   }
 
   return (
     <iframe
-      src={blobUrl}
+      src={`${blobUrl}#toolbar=1&navpanes=0&scrollbar=1`}
       title="File Viewer"
-      className="w-full h-full"
+      className="w-full h-full rounded-lg"
       style={{
-        borderRadius: '8px',
         border: '1px solid #e5e7eb',
+        minHeight: '400px', // Ensure minimum height
       }}
     />
   );
@@ -246,6 +280,44 @@ export default function FileDetailsPage() {
   const [leftWidth, setLeftWidth] = useState(700); // Initial width for left panel
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
+  const [screenWidth, setScreenWidth] = useState(0);
+  const [viewMode, setViewMode] = useState<'document' | 'raw'>('document'); // Toggle between document and raw view
+  const [showSectionMenu, setShowSectionMenu] = useState(false); // For section dropdown
+  const sectionMenuRef = useRef<HTMLDivElement>(null); // For click outside
+  const [originalMediaLink, setOriginalMediaLink] = useState<string>(''); // Store original media link
+
+  // Click outside to close section menu
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (sectionMenuRef.current && !sectionMenuRef.current.contains(event.target as Node)) {
+        setShowSectionMenu(false);
+      }
+    }
+    
+    if (showSectionMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showSectionMenu]);
+
+  // Track screen width for dynamic sizing
+  useEffect(() => {
+    const updateScreenWidth = () => {
+      setScreenWidth(window.innerWidth);
+      // Auto-adjust left panel width based on screen size
+      if (window.innerWidth >= 2560) { // Ultrawide monitors
+        setLeftWidth(Math.min(1000, window.innerWidth * 0.4));
+      } else if (window.innerWidth >= 1920) { // Standard wide monitors
+        setLeftWidth(Math.min(800, window.innerWidth * 0.45));
+      } else {
+        setLeftWidth(Math.min(700, window.innerWidth * 0.5));
+      }
+    };
+    
+    updateScreenWidth();
+    window.addEventListener('resize', updateScreenWidth);
+    return () => window.removeEventListener('resize', updateScreenWidth);
+  }, []);
 
   useEffect(() => {
     async function fetchFileData() {
@@ -257,6 +329,10 @@ export default function FileDetailsPage() {
         const data = await response.json();
         setFileData(data);
         setEditableData(data.rawData);
+        // Store the original media link to prevent corruption
+        if (data.rawData && data.rawData.media_link) {
+          setOriginalMediaLink(data.rawData.media_link);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error occurred');
       } finally {
@@ -277,7 +353,9 @@ export default function FileDetailsPage() {
     const onMouseMove = (moveEvent: MouseEvent) => {
       if (!isResizing.current) return;
       const dx = moveEvent.clientX - startX;
-      setLeftWidth(Math.max(400, Math.min(900, startWidth + dx))); // Min/max width
+      const minWidth = Math.max(400, screenWidth * 0.25);
+      const maxWidth = Math.min(1200, screenWidth * 0.6);
+      setLeftWidth(Math.max(minWidth, Math.min(maxWidth, startWidth + dx))); // Dynamic min/max width
     };
 
     const onMouseUp = () => {
@@ -317,35 +395,159 @@ export default function FileDetailsPage() {
     framingtl: 'Framing Total Length',
     timestamps: 'Time Stamps',
     assemblypartlist: 'Assembly Part List',
+    sheathing: 'Sheathing',
   };
 
-  const sectionOrder = ['documentProperties', 'componentDetails', 'assemblypartlist', 'framingtl', 'timestamps'];
+  // Available sections that can be added/removed
+  const availableSections = ['assemblypartlist', 'framingtl', 'sheathing', 'timestamps'];
+
+  const sectionOrder = ['documentProperties', 'componentDetails', 'assemblypartlist', 'framingtl', 'sheathing', 'timestamps'];
+
+  // Section management functions
+  const addSection = (sectionName: string) => {
+    setEditableData((prev: any) => ({
+      ...prev,
+      [sectionName]: []
+    }));
+    setShowSectionMenu(false);
+  };
+
+  const removeSection = (sectionName: string) => {
+    setEditableData((prev: any) => {
+      const updated = { ...prev };
+      delete updated[sectionName];
+      return updated;
+    });
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <main className="min-h-screen w-full flex flex-col items-center bg-white p-8">
-        <h1 className="text-2xl font-bold mb-4">File Details</h1>
+      <main className="min-h-screen w-full flex flex-col items-center bg-white p-4 lg:p-8">
+        <div className="flex flex-col items-center mb-4">
+          <h1 className="text-2xl font-bold mb-2">File Details</h1>
+          {screenWidth >= 2560 && (
+            <div className="text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full">
+              🖥️ Ultrawide layout optimized
+            </div>
+          )}
+          {/* View Mode Toggle */}
+          <div className="flex items-center space-x-2 mt-2">
+            <button
+              onClick={() => setViewMode('document')}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                viewMode === 'document' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Document View
+            </button>
+            <button
+              onClick={() => setViewMode('raw')}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                viewMode === 'raw' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Raw Data View
+            </button>
+          </div>
+        </div>
         <div
           ref={containerRef}
-          className="w-full max-w-[1800px] flex flex-row gap-0 relative"
-          style={{ userSelect: isResizing.current ? 'none' : 'auto' }}
+          className="w-full flex flex-row gap-0 relative"
+          style={{ 
+            userSelect: isResizing.current ? 'none' : 'auto',
+            maxWidth: screenWidth >= 2560 ? '95vw' : screenWidth >= 1920 ? '90vw' : '1800px'
+          }}
         >
           {/* Left Panel */}
           <div
-            className="bg-white shadow-lg border rounded-xl px-8 py-6 overflow-y-auto flex flex-col text-sm" // Added `text-sm` here
+            className="bg-white shadow-lg border rounded-xl px-4 lg:px-8 py-6 overflow-y-auto flex flex-col text-sm" // Responsive padding
             style={{
               width: leftWidth,
-              minWidth: 400,
-              maxWidth: 900,
-              height: 'calc(75vh + 100px)',
+              minWidth: Math.max(400, screenWidth * 0.25), // Dynamic minimum width
+              maxWidth: Math.min(1200, screenWidth * 0.6), // Dynamic maximum width
+              height: 'calc(80vh + 100px)', // Increased height for better viewing
               transition: isResizing.current ? 'none' : 'width 0.2s',
             }}
           >
-            {sectionOrder.map((sectionKey) => {
-              if (sectionKey === 'documentProperties') {
+            {/* Document View - Structured sections (always in left panel) */}
+            <>
+              {/* Section Management Controls */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">Section Management</h3>
+                  <div className="relative" ref={sectionMenuRef}>
+                    <button
+                      onClick={() => setShowSectionMenu(!showSectionMenu)}
+                      className="flex items-center space-x-1 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      <span>Add Section</span>
+                    </button>
+                    
+                    {showSectionMenu && (
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-white border rounded-lg shadow-lg z-10">
+                        <div className="py-1">
+                          {availableSections
+                            .filter(section => !editableData[section] || !Array.isArray(editableData[section]) || editableData[section].length === 0)
+                            .map(section => (
+                              <button
+                                key={section}
+                                onClick={() => addSection(section)}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                              >
+                                {renamedSections[section] || section}
+                              </button>
+                            ))
+                          }
+                          {availableSections.filter(section => !editableData[section] || !Array.isArray(editableData[section]) || editableData[section].length === 0).length === 0 && (
+                            <div className="px-4 py-2 text-sm text-gray-500 italic">
+                              All sections added
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Current sections with remove buttons */}
+                <div className="flex flex-wrap gap-2">
+                  {availableSections.map(sectionName => (
+                    editableData[sectionName] && Array.isArray(editableData[sectionName]) && editableData[sectionName].length > 0 && (
+                      <div key={sectionName} className="flex items-center space-x-1">
+                        <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
+                          {renamedSections[sectionName] || sectionName}
+                        </span>
+                        <button
+                          onClick={() => removeSection(sectionName)}
+                          className="text-xs px-1 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                          title="Remove section"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+
+              {sectionOrder.map((sectionKey) => {
+                  // Only show sections if they are core sections or have data (including empty arrays for dynamic sections)
+                  if (!['documentProperties', 'componentDetails'].includes(sectionKey) && 
+                      (!editableData[sectionKey] || (!Array.isArray(editableData[sectionKey])))) {
+                    return null;
+                  }
+                  
+                  if (sectionKey === 'documentProperties') {
                 return (
                   <CollapsibleSection title="Document Properties" defaultOpen={false} key={sectionKey}>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className={`grid gap-4 ${screenWidth >= 1920 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       {documentProperties.map((key) => (
                         <div key={key} className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">{key}</label>
@@ -363,7 +565,7 @@ export default function FileDetailsPage() {
               } else if (sectionKey === 'componentDetails') {
                 return (
                   <CollapsibleSection title="Component Details" defaultOpen key={sectionKey}>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className={`grid gap-4 ${screenWidth >= 1920 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       {componentDetails.map((key) => {
                         // Map field names to display labels
                         const fieldLabels: Record<string, string> = {
@@ -511,7 +713,47 @@ export default function FileDetailsPage() {
                     />
                   </CollapsibleSection>
                 );
-              } else {
+              } else if (sectionKey === 'sheathing' && (editableData[sectionKey] && Array.isArray(editableData[sectionKey]))) {
+                return (
+                  <CollapsibleSection title="Sheathing" defaultOpen key={sectionKey}>
+                    <EditableTable
+                      columns={[
+                        { key: 'key_0', label: 'Component Code' },
+                        { key: 'key_1', label: 'Panel Area' },
+                        { key: 'key_2', label: 'Count' },
+                        { key: 'key_3', label: 'Description' },
+                      ]}
+                      data={editableData[sectionKey] || []}
+                      onChange={(rowIdx, col, val) => {
+                        const updated = editableData[sectionKey].map((row: any, idx: number) =>
+                          idx === rowIdx ? { ...row, [col]: val } : row
+                        );
+                        setEditableData({ ...editableData, [sectionKey]: updated });
+                      }}
+                      onAdd={() =>
+                        setEditableData({
+                          ...editableData,
+                          [sectionKey]: [...(editableData[sectionKey] || []), {}],
+                        })
+                      }
+                      onRemove={(rowIdx) =>
+                        setEditableData({
+                          ...editableData,
+                          [sectionKey]: editableData[sectionKey].filter(
+                            (_: any, idx: number) => idx !== rowIdx
+                          ),
+                        })
+                      }
+                      onReorder={(sourceIdx, destinationIdx) => {
+                        const updated = [...editableData[sectionKey]];
+                        const [removed] = updated.splice(sourceIdx, 1);
+                        updated.splice(destinationIdx, 0, removed);
+                        setEditableData({ ...editableData, [sectionKey]: updated });
+                      }}
+                    />
+                  </CollapsibleSection>
+                );
+              } else if (editableData[sectionKey]) {
                 return (
                   <CollapsibleSection title={renamedSections[sectionKey] || sectionKey} defaultOpen key={sectionKey}>
                     {Array.isArray(editableData[sectionKey]) ? (
@@ -564,14 +806,16 @@ export default function FileDetailsPage() {
                   </CollapsibleSection>
                 );
               }
+              return null; // Don't render sections that don't exist or aren't handled
             })}
+            </>
           </div>
           {/* Drag Handle */}
           <div
             onMouseDown={handleMouseDown}
-            className="flex items-center justify-center cursor-col-resize"
+            className="flex items-center justify-center cursor-col-resize hover:bg-gray-300 transition-colors"
             style={{
-              width: 12,
+              width: 16, // Slightly wider for easier grabbing
               background: '#e5e7eb',
               borderLeft: '2px solid #d1d5db',
               borderRight: '2px solid #d1d5db',
@@ -580,18 +824,54 @@ export default function FileDetailsPage() {
               userSelect: 'none',
             }}
           >
-            <div className="w-2 h-12 bg-gray-400 rounded" />
+            <div className="w-3 h-12 bg-gray-400 rounded-sm" />
           </div>
-          {/* Right Panel */}
+          {/* Right Panel - File Viewer or Raw Data */}
           <div
             className="flex-1 bg-white shadow-lg border rounded-xl flex flex-col items-center"
-            style={{ minWidth: 250 }}
+            style={{ 
+              minWidth: Math.max(300, screenWidth * 0.3), // Dynamic minimum width
+              height: 'calc(80vh + 100px)', // Match left panel height
+            }}
           >
-            <BlobFileViewer url={editableData.media_link} />
+            <div className="w-full h-full p-4">
+              {viewMode === 'document' ? (
+                <BlobFileViewer url={originalMediaLink || editableData.media_link} />
+              ) : (
+                // Raw Data View - JSON editor
+                <div className="h-full flex flex-col space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-700">Raw JSON Data</h3>
+                    <p className="text-sm text-amber-600 mt-1">
+                      ⚠️ Caution: Editing the "media_link" field may cause the PDF viewer to fail when switching back to Document View.
+                    </p>
+                  </div>
+                  <textarea
+                    value={JSON.stringify(editableData, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        setEditableData(parsed);
+                      } catch (error) {
+                        // Invalid JSON, don't update
+                        console.warn('Invalid JSON input');
+                      }
+                    }}
+                    className="flex-1 w-full border border-gray-300 rounded px-3 py-2 text-xs font-mono resize-none"
+                    placeholder="Edit JSON data here..."
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {/* Action Buttons */}
-        <div className="w-full max-w-[1800px] flex justify-end gap-4 mt-8">
+        <div 
+          className="w-full flex justify-end gap-4 mt-8"
+          style={{ 
+            maxWidth: screenWidth >= 2560 ? '95vw' : screenWidth >= 1920 ? '90vw' : '1800px'
+          }}
+        >
           <button
             type="button"
             className="bg-gray-200 text-gray-700 font-semibold px-6 py-2 rounded hover:bg-gray-300 transition"
@@ -609,11 +889,15 @@ export default function FileDetailsPage() {
                   headers: {
                     'Content-Type': 'application/json',
                   },
-                  body: JSON.stringify({ data: editableData }), // Send editableData to the API
+                  body: JSON.stringify({ 
+                    data: editableData, 
+                    stagingId: id // Pass the staging ID to update status
+                  }),
                 });
 
                 if (!response.ok) {
-                  throw new Error('Failed to approve data');
+                  const errorData = await response.json();
+                  throw new Error(errorData.error || 'Failed to approve data');
                 }
 
                 const result = await response.json();
@@ -621,7 +905,7 @@ export default function FileDetailsPage() {
                 router.push('/production-planning/data-review'); // Navigate back to the data review page
               } catch (error) {
                 console.error('Error approving data:', error);
-                alert('Failed to approve data');
+                alert(`Failed to approve data: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
             }}
           >

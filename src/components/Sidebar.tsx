@@ -17,6 +17,7 @@ import {
   LogOut,
   AlertTriangle,
   ClipboardList,
+  TrendingUp,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
@@ -26,6 +27,7 @@ const links = [
   { href: '/operator-time', label: 'Operator Panel', icon: <Timer size={18} /> },
   { href: '/project-summaries', label: 'Projects', icon: <Package size={18} /> },
   { href: '/components', label: 'Components', icon: <Boxes size={18} /> },
+  { href: '/sales', label: 'Sales', icon: <TrendingUp size={18} /> },
   { href: '/activity', label: 'Activity Feed', icon: <Activity size={18} /> },
   { href: '/quality-issue-summaries', label: 'Quality', icon: <AlertTriangle size={18} /> },
   { href: '/production-planning', label: 'Production Planning', icon: <ClipboardList size={18} /> },
