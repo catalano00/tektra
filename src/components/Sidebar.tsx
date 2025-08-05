@@ -29,6 +29,7 @@ const links = [
   { href: '/activity', label: 'Activity Feed', icon: <Activity size={18} /> },
   { href: '/quality-issue-summaries', label: 'Quality', icon: <AlertTriangle size={18} /> },
   { href: '/production-planning', label: 'Production Planning', icon: <ClipboardList size={18} /> },
+  { href: '/production-planning/data-review', label: 'Data Review', icon: <ClipboardList size={18} /> }, // New Data Review link
 ];
 
 const bottomLinks = [
