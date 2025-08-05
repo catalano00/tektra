@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse(JSON.stringify({ stored: true }), { status: 200 });
   } catch (error) {
     console.error('Error storing data:', error);
-    const errorMessage = (error instanceof Error) ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new NextResponse(JSON.stringify({ stored: false, error: errorMessage }), { status: 500 });
   }
 }
