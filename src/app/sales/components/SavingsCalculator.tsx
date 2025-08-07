@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar // <-- Add these imports
+} from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -22,23 +26,35 @@ import {
 } from 'lucide-react';
 
 interface ProjectData {
+  daysSaved: string;
   id: string;
   projectName: string;
   projectAddress: string;
   projectSqFt: number;
-  estimatedDevelopmentValue?: number; // Auto-calculated based on sqft
+  estimatedDevelopmentValue?: number;
+  developmentCostPerSqFt?: number;
   estimateDate: string;
+  projectDuration?: number;
+  phase?: number; // <-- Add phase
 }
 
 interface SavingsData {
+  primaryCostElements: {
+    key: string;
+    label: string;
+    code: string;
+    description: string;
+    unit: string;
+    rate: number;
+  }[];
   // Client Details
   projectsPerYear: number;
   gcFeePercent: number;
-  
+
   // Project Info
   client: string;
   projects: ProjectData[];
-  
+
   // Project Cost Elements (from cost codes)
   framingMaterials: number;
   framingLabor: number;
@@ -58,25 +74,31 @@ interface SavingsData {
   storage: number;
   dumpsters: number;
   infrastructureExcavation: number;
-  
+
   // Fees and Insurance
   gcDeveloperFeePercent: number;
   generalLiabilityInsurancePercent: number;
-  
+
   // TEKTRA Reductions (percentages)
   overallReductionPercent: number;
   timeReductionPercent: number;
-  
+
   // Timeline
   traditionalTimelineWeeks: number;
   workdaysSaved: number;
 }
 
+const primaryCostElements = [
+  { key: 'framingMaterials', label: 'Framing Materials incl Waste', code: 'FRAM-MAT', description: 'Materials and waste for framing construction', unit: '/sqft', rate: 35 },
+  { key: 'framingLabor', label: 'Framing Labor including CO\'s', code: 'FRAM-LAB', description: 'Labor costs including change orders for framing', unit: '/sqft', rate: 30 },
+  { key: 'doorWindowInstall', label: 'Door and Window Install', code: 'DW-INST', description: 'Installation costs for doors and windows', unit: '/sqft', rate: 8 }
+];
+
 const initialSavingsData: SavingsData = {
   // Client Details
-  projectsPerYear: 3,
-  gcFeePercent: 15.0,
-  
+  projectsPerYear: 0,
+  gcFeePercent: 0,
+
   // Project Info
   client: '',
   projects: [
@@ -84,15 +106,20 @@ const initialSavingsData: SavingsData = {
       id: '1',
       projectName: '',
       projectAddress: '',
-      projectSqFt: 3000,
-      estimateDate: ''
+      projectSqFt: 3000, // Default: 3000 sqft
+      estimateDate: '',
+      daysSaved: '20',   // Default: 20 work days saved
+      projectDuration: 10, // Default: 10 months
+      developmentCostPerSqFt: 650, // Default: $650 per sqft
+      estimatedDevelopmentValue: 3000 * 650, // Default calculated value
+      phase: 1,
     }
   ],
-  
+
   // Project Cost Elements (from cost codes with calculated values)
-  framingMaterials: 0,
-  framingLabor: 0,
-  doorWindowInstall: 0,
+  framingMaterials: 35.00,
+  framingLabor: 30.00,
+  doorWindowInstall: 8,
   architecturalDesign: 300.00,
   engineeringDesign: 100.00,
   buildersRiskInsurance: 55.20,
@@ -106,27 +133,22 @@ const initialSavingsData: SavingsData = {
   jobsiteTrailer: 18.46,
   jobToilet: 10.00,
   storage: 20.00,
-  dumpsters: 2500.00,
-  infrastructureExcavation: 1200.00,
-  
-  // Fees and Insurance (percentages)
-  gcDeveloperFeePercent: 15.0,
-  generalLiabilityInsurancePercent: 2.0,
-  
-  // TEKTRA Reductions
-  overallReductionPercent: 50, // 50% overall cost reduction
-  timeReductionPercent: 50, // 50% time reduction
-  
-  // Timeline
-  traditionalTimelineWeeks: 24,
-  workdaysSaved: 60 // Default 12 weeks (60 workdays) for meaningful chart display
-};
+  dumpsters: 125.00,
+  infrastructureExcavation: 60.00,
 
-const primaryCostElements = [
-  { key: 'framingMaterials', label: 'Framing Materials incl Waste', code: 'FRAM-MAT', description: 'Materials and waste for framing construction', unit: '/sqft', rate: 35 },
-  { key: 'framingLabor', label: 'Framing Labor including CO\'s', code: 'FRAM-LAB', description: 'Labor costs including change orders for framing', unit: '/sqft', rate: 30 },
-  { key: 'doorWindowInstall', label: 'Door and Window Install', code: 'DW-INST', description: 'Installation costs for doors and windows', unit: '/sqft', rate: 8 }
-];
+  // Fees and Insurance (percentages)
+  gcDeveloperFeePercent: 0,
+  generalLiabilityInsurancePercent: 0,
+
+  // Timeline
+  traditionalTimelineWeeks: 0,
+  workdaysSaved: 0 // 
+  ,
+
+  overallReductionPercent: 0,
+  timeReductionPercent: 0,
+  primaryCostElements: primaryCostElements, // Initialize with the predefined array
+};
 
 const division1CostCategories = [
   { key: 'architecturalDesign', label: 'Architectural Design', code: 'ARCH-DES', description: 'less CA required on site during project (RFI\'s, CO\'s, etc)' },
@@ -146,6 +168,7 @@ const division1CostCategories = [
   { key: 'infrastructureExcavation', label: 'Infrastructure, Excavation and Fill', code: 'INFRA-EXC', description: 'quicker framing means no re-mobilization' }
 ];
 
+
 export default function SavingsCalculator() {
   const [savingsData, setSavingsData] = useState<SavingsData>(initialSavingsData);
   const [calculations, setCalculations] = useState<any>({ monthlyData: [] });
@@ -158,178 +181,309 @@ export default function SavingsCalculator() {
     setCalculations(calc);
   }, [savingsData]);
 
-  function calculateSavings(data: SavingsData) {
-    // Calculate totals across all projects
-    const totalSqFt = data.projects.reduce((sum, project) => sum + (project.projectSqFt || 0), 0);
-    const totalDevelopmentValue = data.projects.reduce((sum, project) => {
-      const projectValue = project.estimatedDevelopmentValue || (project.projectSqFt * 650); // $650/sqft baseline
-      return sum + projectValue;
-    }, 0);
+  // Helper: get projects sorted by phase
+  function getProjectsByPhase(projects: ProjectData[]) {
+    return [...projects].sort((a, b) => (a.phase || 1) - (b.phase || 1));
+  }
 
-    // Calculate primary construction elements total costs (based on total sqft)
-    const primaryConstructionTotal = primaryCostElements.reduce((sum, element) => {
-      return sum + (element.rate * totalSqFt);
-    }, 0);
+  // Helper: get project start months based on phase sequencing (fractional months allowed)
+  function getProjectStartMonths(projects: ProjectData[]) {
+    const sorted = getProjectsByPhase(projects);
+    let startMonths: number[] = [];
+    let phaseStart: Record<number, number> = {};
+    let phaseEnd: Record<number, number> = {};
 
-    // Calculate total daily costs for Division 1 elements only (excluding GC fees)
-    const division1DailyCosts = 
-      data.architecturalDesign + data.engineeringDesign + data.buildersRiskInsurance + 
-      data.lotPropertyCost + data.adminLoanMarketingFees + data.supervision + 
-      data.genSkilledLabor + data.preConServices + data.tempFencing + 
-      data.bundledUtilities + data.jobsiteTrailer + data.jobToilet + 
-      data.storage + data.dumpsters + data.infrastructureExcavation;
-
-    // Apply percentage-based costs to Division 1 daily costs (excluding client GC fee)
-    const gcDeveloperFee = division1DailyCosts * (data.gcDeveloperFeePercent / 100);
-    const generalLiabilityInsurance = division1DailyCosts * (data.generalLiabilityInsurancePercent / 100);
-    
-    const division1DailyCostsWithFees = division1DailyCosts + gcDeveloperFee + generalLiabilityInsurance;
-
-    // Division 1 costs are only for traditional method - based on workdays saved
-    // TEKTRA eliminates these time-based costs entirely
-    const division1TraditionalCost = division1DailyCostsWithFees * (data.workdaysSaved || 0);
-    const division1TektraCost = 0; // TEKTRA eliminates Division 1 time-based costs
-
-    // Calculate client GC fee on the total construction value (not just Division 1)
-    const baseConstructionCost = primaryConstructionTotal + division1TraditionalCost;
-    const clientGcFee = baseConstructionCost * (data.gcFeePercent / 100);
-
-    // TEKTRA System Cost - Fixed at $88/sqft
-    const tektraSystemCost = 88 * totalSqFt;
-
-    // Traditional stick-built costs vs TEKTRA system cost
-    // Client GC fee applies to stick-built method only
-    const traditionalTotalCost = primaryConstructionTotal + division1TraditionalCost + clientGcFee;
-    const tektraTotalCost = tektraSystemCost + division1TektraCost;
-
-    // Calculate savings
-    const totalSavings = traditionalTotalCost - tektraTotalCost;
-    
-    // Timeline calculations for display purposes
-    const traditionalTimelineWeeks = (data.workdaysSaved || 0) / 5; // Convert workdays to weeks
-    const tektraTimelineWeeks = 0; // TEKTRA eliminates the time component
-    const timeSavings = traditionalTimelineWeeks - tektraTimelineWeeks;
-
-    // Percentages
-    const totalSavingsPercent = traditionalTotalCost > 0 ? (totalSavings / traditionalTotalCost) * 100 : 0;
-    const timeSavingsPercent = data.timeReductionPercent;
-
-    // Cost per sq ft calculations
-    const traditionalCostPerSqFt = totalSqFt > 0 ? traditionalTotalCost / totalSqFt : 0;
-    const tektraCostPerSqFt = totalSqFt > 0 ? tektraTotalCost / totalSqFt : 0;
-    const savingsPerSqFt = traditionalCostPerSqFt - tektraCostPerSqFt;
-
-    // ROI calculations - now using dynamic projects per year
-    const annualSavings = totalSavings * (data.projectsPerYear || 1);
-    const roiPercent = tektraTotalCost > 0 ? (annualSavings / tektraTotalCost) * 100 : 0;
-
-    // Revenue recognition calculations for the graph
-    // Use defaults if values are missing to ensure chart always displays
-    const traditionalProjectDuration = Math.max((data.workdaysSaved || 60) / 5, 1); // weeks, default to 12 weeks
-    const tektraProjectDuration = 2; // Assume TEKTRA projects take 2 weeks
-    const projectsPerYear = data.projectsPerYear || 3;
-    
-    const traditionalRevenuePerWeek = totalDevelopmentValue / traditionalProjectDuration;
-    const tektraRevenuePerWeek = totalDevelopmentValue / tektraProjectDuration;
-    
-    // Calculate cumulative revenue over 12 months for visualization
-    const monthlyData = [];
-    let traditionalCumulativeRevenue = 0;
-    let tektraCumulativeRevenue = 0;
-    
-    for (let month = 1; month <= 12; month++) {
-      const weeksInMonth = month * 4.33; // Average weeks per month
-      
-      // Traditional: slower project completion
-      const traditionalProjectsCompleted = Math.floor(weeksInMonth / traditionalProjectDuration) * (projectsPerYear / 12);
-      traditionalCumulativeRevenue = traditionalProjectsCompleted * totalDevelopmentValue;
-      
-      // TEKTRA: faster project completion
-      const tektraProjectsCompleted = Math.floor(weeksInMonth / tektraProjectDuration) * (projectsPerYear / 12);
-      tektraCumulativeRevenue = tektraProjectsCompleted * totalDevelopmentValue;
-      
-      monthlyData.push({
-        month,
-        traditional: Math.max(0, traditionalCumulativeRevenue), // Ensure no negative values
-        tektra: Math.max(0, tektraCumulativeRevenue), // Ensure no negative values
-        difference: Math.max(0, tektraCumulativeRevenue - traditionalCumulativeRevenue)
-      });
+    let currentMonth = 1;
+    const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
+    for (const phase of uniquePhases) {
+      phaseStart[phase] = currentMonth;
+      // Find all projects in this phase
+      const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
+      // The phase ends after the longest project in this phase (allow fractional months)
+      const maxDuration = Math.max(...projectsInPhase.map(p => Number(p.projectDuration) || 0), 0);
+      phaseEnd[phase] = currentMonth + maxDuration;
+      currentMonth = phaseEnd[phase];
     }
 
+    // Assign start months for each project based on its phase (fractional allowed)
+    for (let i = 0; i < sorted.length; i++) {
+      const phase = sorted[i].phase || 1;
+      startMonths[i] = phaseStart[phase];
+    }
+    return startMonths;
+  }
+
+  // Helper: get TEKTRA project start months based on phase sequencing (fractional months allowed)
+  function getTektraProjectStartMonths(projects: ProjectData[]) {
+    const sorted = getProjectsByPhase(projects);
+    let startMonths: number[] = [];
+    let phaseStart: Record<number, number> = {};
+    let phaseEnd: Record<number, number> = {};
+
+    let currentMonth = 1;
+    const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
+    for (const phase of uniquePhases) {
+      phaseStart[phase] = currentMonth;
+      // Find all projects in this phase
+      const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
+      // The phase ends after the longest TEKTRA duration in this phase (fractional allowed)
+      const maxTektraDuration = Math.max(
+        ...projectsInPhase.map(p => {
+          const duration = Number(p.projectDuration) || 0;
+          const daysSaved = Number(p.daysSaved) || 0;
+          const monthsSaved = daysSaved / 21.67;
+          return Math.max(duration - monthsSaved, 1);
+        }),
+        0
+      );
+      phaseEnd[phase] = currentMonth + maxTektraDuration;
+      currentMonth = phaseEnd[phase];
+    }
+
+    // Assign start months for each project based on its phase (fractional allowed)
+    for (let i = 0; i < sorted.length; i++) {
+      const phase = sorted[i].phase || 1;
+      startMonths[i] = phaseStart[phase];
+    }
+    return startMonths;
+  }
+
+  function getRevenueChartData(projects: ProjectData[]) {
+    const sorted = getProjectsByPhase(projects);
+    const startMonths = getProjectStartMonths(sorted);
+    const tektraStartMonths = getTektraProjectStartMonths(sorted);
+
+    // Calculate max months for stick built (phased)
+    let maxMonths = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const duration = Number(sorted[i].projectDuration) || 0;
+      const endMonth = (startMonths[i] || 1) + duration - 1;
+      if (endMonth > maxMonths) maxMonths = endMonth;
+    }
+
+    // Calculate max months for TEKTRA (phased)
+    let maxTektraMonths = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const duration = Number(sorted[i].projectDuration) || 0;
+      const daysSaved = Number(sorted[i].daysSaved) || 0;
+      const monthsSaved = daysSaved / 21.67;
+      const tektraDuration = Math.max(duration - monthsSaved, 1);
+      const endMonth = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
+      if (endMonth > maxTektraMonths) maxTektraMonths = endMonth;
+    }
+
+    // --- Ensure head start value is shown in the monthly chart ---
+    // Find the month where TEKTRA finishes (lastTektraMonth)
+    const lastTektraMonth = maxTektraMonths;
+    if (!maxMonths && !maxTektraMonths) return [];
+
+    let chartData: { month: number; stickBuilt: number; tektra: number; opportunity: number }[] = [];
+    let cumulativeTektra = 0;
+    let cumulativeStick = 0;
+    let headStartValue = 0;
+    let headStartMonth = null;
+
+    for (let month = 1; month <= Math.max(maxMonths, maxTektraMonths); month++) {
+      let stickBuilt = 0;
+      let tektra = 0;
+      // Stick Built
+      for (let i = 0; i < sorted.length; i++) {
+        const duration = Number(sorted[i].projectDuration) || 0;
+        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
+        const start = startMonths[i];
+        if (month >= start && month < start + duration && duration > 0) {
+          stickBuilt += value / duration;
+        }
+      }
+      // TEKTRA
+      for (let i = 0; i < sorted.length; i++) {
+        const duration = Number(sorted[i].projectDuration) || 0;
+        const daysSaved = Number(sorted[i].daysSaved) || 0;
+        const monthsSaved = daysSaved / 21.67;
+        const tektraDuration = Math.max(duration - monthsSaved, 1);
+        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
+        const start = tektraStartMonths[i];
+        if (tektraDuration > 0 && month >= start && month < start + Math.ceil(tektraDuration)) {
+          const perMonth = value / tektraDuration;
+          if (month === start + Math.ceil(tektraDuration) - 1) {
+            tektra += value - (perMonth * (Math.ceil(tektraDuration) - 1));
+          } else {
+            tektra += perMonth;
+          }
+        }
+      }
+      cumulativeStick += stickBuilt;
+      if (month <= lastTektraMonth) {
+        cumulativeTektra += tektra;
+      }
+      // Capture head start value and the month it occurs
+      if (month === lastTektraMonth) {
+        headStartValue = cumulativeTektra - cumulativeStick;
+        headStartMonth = month;
+      }
+      let opportunity = 0;
+      // If TEKTRA finishes before stick built, show head start value as the stick built revenue for the remaining months
+      if (month > lastTektraMonth && month <= maxMonths && headStartValue > 0) {
+        // Opportunity is the stick built revenue for this month (potential new project revenue)
+        opportunity = stickBuilt;
+      }
+      // Show the original head start value in the first month after TEKTRA finishes if there are no more stick built months
+      if (month === lastTektraMonth + 1 && maxMonths <= lastTektraMonth && headStartValue > 0) {
+        opportunity = headStartValue;
+      }
+      chartData.push({
+        month,
+        stickBuilt,
+        tektra,
+        opportunity
+      });
+    }
+    return chartData;
+  }
+
+  function calculateSavings(data: SavingsData) {
+    const totalSqFt = data.projects.reduce((sum, project) => sum + (project.projectSqFt || 0), 0);
+
+    // Primary Construction Costs
+    const primaryConstructionTotal = totalSqFt > 0 && data.primaryCostElements
+      ? data.primaryCostElements.reduce((sum: number, element: { rate: number }) => sum + (element.rate * totalSqFt), 0)
+      : 0;
+
+      // Division 1 Costs
+      const division1DailyCosts = division1CostCategories.reduce((sum, category) => {
+        const cost = Number(data[category.key as keyof SavingsData]) || 0;
+        return sum + cost;
+      }, 0);
+
+      const division1DailyCostsWithFees = division1DailyCosts > 0
+        ? division1DailyCosts + (division1DailyCosts * (data.gcDeveloperFeePercent / 100)) + (division1DailyCosts * (data.generalLiabilityInsurancePercent / 100))
+        : 0;
+
+      const division1TraditionalCost = division1DailyCostsWithFees * (data.workdaysSaved || 0);
+
+    // Client GC Fee
+    const clientGcFee = primaryConstructionTotal > 0
+      ? (primaryConstructionTotal + division1TraditionalCost) * (data.gcFeePercent / 100)
+      : 0;
+
+    // Total Costs
+    const traditionalTotalCost = primaryConstructionTotal + division1TraditionalCost + clientGcFee;
+    const tektraTotalCost = totalSqFt > 0 ? (88 * totalSqFt) : 0;
+
+    // Total Savings
+    const totalSavings = traditionalTotalCost - tektraTotalCost;
+
+    console.log('Total Square Footage:', totalSqFt);
+    console.log('Primary Construction Total:', primaryConstructionTotal);
+    console.log('Division 1 Traditional Cost:', division1TraditionalCost);
+    console.log('Client GC Fee:', clientGcFee);
+    console.log('Traditional Total Cost:', traditionalTotalCost);
+
     return {
+      totalSavings: totalSavings > 0 ? totalSavings : 0, // Ensure no negative savings
+      savingsPerSqFt: totalSqFt > 0 ? (traditionalTotalCost / totalSqFt) - (tektraTotalCost / totalSqFt) : 0,
+      roiPercent: tektraTotalCost > 0 ? ((totalSavings * (data.projectsPerYear || 1)) / tektraTotalCost) * 100 : 0,
       traditionalTotalCost,
       tektraTotalCost,
-      tektraTimelineWeeks,
-      tektraSystemCost,
-      primaryConstructionTotal,
-      division1TraditionalCost,
-      division1TektraCost,
-      division1DailyCostsWithFees,
-      baseConstructionCost,
-      clientGcFee,
-      totalSavings,
-      timeSavings,
-      totalSavingsPercent,
-      timeSavingsPercent,
-      traditionalCostPerSqFt,
-      tektraCostPerSqFt,
-      savingsPerSqFt,
-      annualSavings,
-      roiPercent,
-      monthlyData,
-      traditionalRevenuePerWeek,
-      tektraRevenuePerWeek,
-      totalSqFt,
-      totalDevelopmentValue,
-      // Legacy properties for backward compatibility
-      traditionalLaborCost: traditionalTotalCost * 0.6, // Estimate
-      traditionalMaterialCost: traditionalTotalCost * 0.4, // Estimate
-      tektraLaborCost: tektraTotalCost * 0.6, // Estimate
-      tektraMaterialCost: tektraTotalCost * 0.4, // Estimate
-      laborSavings: (traditionalTotalCost * 0.6) - (tektraTotalCost * 0.6),
-      materialSavings: (traditionalTotalCost * 0.4) - (tektraTotalCost * 0.4),
-      laborSavingsPercent: data.timeReductionPercent,
-      materialSavingsPercent: data.timeReductionPercent
     };
   }
 
+  function getProfitChartData(projects: ProjectData[], gcFeePercent: number) {
+    // Calculate the maximum duration in months for all projects (stick built)
+    let maxMonths = Math.max(
+      ...projects.map(p => Number(p.projectDuration) || 0)
+    );
+    if (!maxMonths) return [];
+
+    let chartData: { month: number; stickBuiltProfit: number; tektraProfit: number; additionalProfit: number }[] = [];
+
+    for (let month = 1; month <= maxMonths; month++) {
+      let stickBuiltProfit = 0;
+      let tektraProfit = 0;
+      projects.forEach(project => {
+        const durationMonths = Number(project.projectDuration) || 0;
+        const daysSaved = Number(project.daysSaved) || 0;
+        // Work days per month ~21.67
+        const monthsSaved = daysSaved / 21.67;
+        const tektraDurationMonths = Math.max(durationMonths - monthsSaved, 1);
+        const totalRevenue = Number(project.estimatedDevelopmentValue) || 0;
+        const feeRate = gcFeePercent / 100;
+
+        // Stick Built: profit (fee) recognized linearly over original duration
+        if (month <= durationMonths && durationMonths > 0) {
+          stickBuiltProfit += (totalRevenue * feeRate) / durationMonths;
+        }
+        // TEKTRA: profit (fee) recognized linearly over shortened duration
+        if (month <= tektraDurationMonths && tektraDurationMonths > 0) {
+          tektraProfit += (totalRevenue * feeRate) / tektraDurationMonths;
+        }
+      });
+      chartData.push({
+        month,
+        stickBuiltProfit,
+        tektraProfit,
+        additionalProfit: tektraProfit - stickBuiltProfit
+      });
+    }
+
+    return chartData;
+  }
+
   const handleInputChange = (field: keyof SavingsData, value: string | number) => {
-    setSavingsData(prev => ({
-      ...prev,
-      [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value
-    }));
+    setSavingsData(prev => {
+      const updatedData = {
+        ...prev,
+        [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value
+      };
+
+      // Automatically update projectsPerYear based on the count of projects
+      if (field === 'projects') {
+        updatedData.projectsPerYear = updatedData.projects.length;
+      }
+
+      return updatedData;
+    });
   };
 
   const handleProjectChange = (projectId: string, field: keyof ProjectData, value: string | number) => {
     setSavingsData(prev => ({
       ...prev,
-      projects: prev.projects.map(project => 
-        project.id === projectId 
-          ? { 
-              ...project, 
-              [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value,
-              // Auto-calculate development value if sqft changes
-              ...(field === 'projectSqFt' && { 
-                estimatedDevelopmentValue: (typeof value === 'number' ? value : Number(value)) * 650 
-              })
-            }
-          : project
+      projects: prev.projects.map((project, idx) =>
+        project.id === projectId
+          ? {
+            ...project,
+            [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value,
+            estimatedDevelopmentValue:
+              (field === 'developmentCostPerSqFt' || field === 'projectSqFt')
+                ? (field === 'developmentCostPerSqFt'
+                    ? (project.projectSqFt || 0) * Number(value)
+                    : (Number(value) || 0) * (project.developmentCostPerSqFt || 0))
+                : project.estimatedDevelopmentValue
+          }
+        : project
       )
     }));
   };
 
   const addProject = () => {
-    const newProject: ProjectData = {
-      id: Date.now().toString(),
-      projectName: '',
-      projectAddress: '',
-      projectSqFt: 3000,
-      estimateDate: ''
+    setSavingsData(prev => {
+      const newProject: ProjectData = {
+        id: Date.now().toString(),
+        projectName: '',
+        projectAddress: '',
+        projectSqFt: 3000, // Default: 3000 sqft
+        estimateDate: '',
+        daysSaved: '21.67',   // Default: 21.67 work days saved
+        projectDuration: 12, // Default: 12 months
+        developmentCostPerSqFt: 650, // Default: $650 per sqft
+        estimatedDevelopmentValue: 3000 * 650, // Default calculated value
+        phase: 1 // Default to phase 1, do not auto-increment
     };
-    setSavingsData(prev => ({
-      ...prev,
-      projects: [...prev.projects, newProject]
-    }));
+      return {
+        ...prev,
+        projects: [...prev.projects, newProject]
+      };
+    });
   };
 
   const removeProject = (projectId: string) => {
@@ -352,733 +506,609 @@ export default function SavingsCalculator() {
     return `${percent.toFixed(1)}%`;
   };
 
+  const revenueChartData = getRevenueChartData(savingsData.projects);
+  const profitChartData = getProfitChartData(savingsData.projects, savingsData.gcFeePercent);
+  const cumulativeRevenueChartData = getCumulativeRevenueChartData(savingsData.projects, savingsData.gcFeePercent);
+
+  /**
+   * To illustrate the opportunity cost and real value of quicker revenue/project recognition:
+   * 1. Show cumulative revenue over time for both Stick Built and TEKTRA.
+   * 2. The area between the two curves (or the difference at each month) represents the opportunity cost benefit.
+   * 3. You can add a cumulative revenue chart and/or a chart of the difference (delta) per month.
+   */
+
+  // Helper to get cumulative revenue data and cumulative opportunity value
+  function getCumulativeRevenueChartData(projects: ProjectData[], gcFeePercent: number) {
+    const sorted = getProjectsByPhase(projects);
+    const startMonths = getProjectStartMonths(sorted);
+    const tektraStartMonths = getTektraProjectStartMonths(sorted);
+
+    let maxMonths = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const duration = Number(sorted[i].projectDuration) || 0;
+      const endMonth = (startMonths[i] || 1) + duration - 1;
+      if (endMonth > maxMonths) maxMonths = endMonth;
+    }
+    let maxTektraMonths = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const duration = Number(sorted[i].projectDuration) || 0;
+      const daysSaved = Number(sorted[i].daysSaved) || 0;
+      const monthsSaved = daysSaved / 21.67;
+      const tektraDuration = Math.max(duration - monthsSaved, 1);
+      const endMonth = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
+      if (endMonth > maxTektraMonths) maxTektraMonths = endMonth;
+    }
+    const lastTektraMonth = maxTektraMonths;
+    if (!maxMonths && !maxTektraMonths) return [];
+
+    let chartData: { 
+      month: number; 
+      stickBuilt: number; 
+      tektra: number; 
+      delta: number; 
+      cumulativeOpportunity: number;
+      stickBuiltProfit: number;
+      tektraProfit: number;
+    }[] = [];
+    let cumulativeStick = 0, cumulativeTektra = 0, cumulativeOpportunity = 0;
+    let cumulativeStickProfit = 0, cumulativeTektraProfit = 0;
+    let headStartValue = 0;
+
+    for (let month = 1; month <= Math.max(maxMonths, maxTektraMonths); month++) {
+      let stickBuilt = 0;
+      let tektra = 0;
+      let stickBuiltProfit = 0;
+      let tektraProfit = 0;
+      for (let i = 0; i < sorted.length; i++) {
+        const duration = Number(sorted[i].projectDuration) || 0;
+        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
+        const feeRate = gcFeePercent / 100;
+        const start = startMonths[i];
+        if (month >= start && month < start + duration && duration > 0) {
+          stickBuilt += value / duration;
+          stickBuiltProfit += (value * feeRate) / duration;
+        }
+      }
+      for (let i = 0; i < sorted.length; i++) {
+        const duration = Number(sorted[i].projectDuration) || 0;
+        const daysSaved = Number(sorted[i].daysSaved) || 0;
+        const monthsSaved = daysSaved / 21.67;
+        const tektraDuration = Math.max(duration - monthsSaved, 1);
+        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
+        const feeRate = gcFeePercent / 100;
+        const start = tektraStartMonths[i];
+        if (tektraDuration > 0 && month >= start && month < start + Math.ceil(tektraDuration)) {
+          const perMonth = value / tektraDuration;
+          const perMonthProfit = (value * feeRate) / tektraDuration;
+          if (month === start + Math.ceil(tektraDuration) - 1) {
+            tektra += value - (perMonth * (Math.ceil(tektraDuration) - 1));
+            tektraProfit += (value * feeRate) - (perMonthProfit * (Math.ceil(tektraDuration) - 1));
+          } else {
+            tektra += perMonth;
+            tektraProfit += perMonthProfit;
+          }
+        }
+      }
+      cumulativeStick += stickBuilt;
+      cumulativeTektra += tektra;
+      cumulativeStickProfit += stickBuiltProfit;
+      cumulativeTektraProfit += tektraProfit;
+      if (month === lastTektraMonth) {
+        headStartValue = cumulativeTektra - cumulativeStick;
+      }
+      const delta = cumulativeTektra - cumulativeStick;
+      cumulativeOpportunity = Math.max(cumulativeOpportunity, delta);
+      chartData.push({
+        month,
+        stickBuilt: cumulativeStick,
+        tektra: cumulativeTektra,
+        delta,
+        cumulativeOpportunity,
+        stickBuiltProfit: cumulativeStickProfit,
+        tektraProfit: cumulativeTektraProfit,
+      });
+    }
+    return chartData;
+  }
+
+  // Helper to summarize data per year
+  function getYearlySummary(data: typeof cumulativeRevenueChartData) {
+    const years: {
+      year: number;
+      stickBuilt: number;
+      tektra: number;
+      stickBuiltProfit: number;
+      tektraProfit: number;
+      opportunity: number;
+    }[] = [];
+    let currentYear = 1;
+    let yearData = {
+      stickBuilt: 0,
+      tektra: 0,
+      stickBuiltProfit: 0,
+      tektraProfit: 0,
+      opportunity: 0,
+    };
+    data.forEach((row, idx) => {
+      yearData.stickBuilt += row.stickBuilt - (data[idx - 1]?.stickBuilt || 0);
+      yearData.tektra += row.tektra - (data[idx - 1]?.tektra || 0);
+      yearData.stickBuiltProfit += row.stickBuiltProfit - (data[idx - 1]?.stickBuiltProfit || 0);
+      yearData.tektraProfit += row.tektraProfit - (data[idx - 1]?.tektraProfit || 0);
+      yearData.opportunity += row.cumulativeOpportunity - (data[idx - 1]?.cumulativeOpportunity || 0);
+
+      if ((row.month % 12 === 0) || idx === data.length - 1) {
+        years.push({
+          year: currentYear,
+          ...yearData,
+        });
+        currentYear++;
+        yearData = {
+          stickBuilt: 0,
+          tektra: 0,
+          stickBuiltProfit: 0,
+          tektraProfit: 0,
+          opportunity: 0,
+        };
+      }
+    });
+    return years;
+  }
+
+  const yearlySummary = getYearlySummary(cumulativeRevenueChartData);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        
-        {/* Header - Aligned with Sales Dashboard */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              TEKTRA Savings Calculator
-            </h1>
-            <p className="text-gray-600">
-              Precision Construction Cost Analysis & ROI Projections
-            </p>
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="flex flex-col items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2 text-center">
+            TEKTRA Savings Calculator
+          </h1>
+          <p className="text-sm text-gray-600 text-center">
+            Precision Construction Cost Analysis & ROI Projections
+          </p>
+        </div>
+
+        {/* Hero Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg border border-blue-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
+            <span className="text-blue-700 text-base font-semibold mb-4">Total Savings</span>
+            <span className="text-4xl font-bold text-blue-800">
+              {formatCurrency(calculations.totalSavings || 0)}
+            </span>
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex items-center gap-2">
-              <BarChart3 size={16} />
-              Export Report
-            </Button>
-            <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
-              <Calculator size={16} />
-              New Analysis
-            </Button>
+          <div className="bg-gradient-to-br from-green-50 to-green-100 shadow-lg border border-green-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
+            <span className="text-green-700 text-base font-semibold mb-4">Savings Per Sq Ft</span>
+            <span className="text-4xl font-bold text-green-800">
+              {formatCurrency(calculations.savingsPerSqFt || 0)}
+            </span>
+          </div>
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 shadow-lg border border-yellow-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
+            <span className="text-yellow-700 text-base font-semibold mb-4">Annual ROI</span>
+            <span className="text-4xl font-bold text-yellow-800">
+              {formatPercent(calculations.roiPercent || 0)}
+            </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
-          
-          {/* Streamlined Input Section - Takes 2 columns */}
-          <div className="xl:col-span-2 space-y-8">
-            
-            {/* Client Details Section */}
-            <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
-              <CardHeader className="pb-6">
-                <CardTitle className="text-2xl font-light text-slate-800 flex items-center gap-3">
-                  <Users className="h-6 w-6 text-blue-600" />
-                  Client Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-3">
-                      Client Name
-                    </label>
-                    <input
-                      type="text"
-                      value={savingsData.client}
-                      onChange={(e) => handleInputChange('client', e.target.value)}
-                      className="w-full border-0 border-b-2 border-slate-200 bg-transparent px-0 py-3 text-xl font-light focus:border-blue-600 focus:ring-0 transition-colors"
-                      placeholder="Enter client name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-3">
-                      Projects Per Year
-                    </label>
-                    <input
-                      type="number"
-                      value={savingsData.projectsPerYear || ''}
-                      onChange={(e) => handleInputChange('projectsPerYear', e.target.value)}
-                      className="w-full border-0 border-b-2 border-slate-200 bg-transparent px-0 py-3 text-xl font-light focus:border-blue-600 focus:ring-0 transition-colors"
-                      placeholder="Enter annual project volume"
-                      min="1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-3">
-                      GC Fee Percentage
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={savingsData.gcFeePercent || ''}
-                      onChange={(e) => handleInputChange('gcFeePercent', e.target.value)}
-                      className="w-full border-0 border-b-2 border-slate-200 bg-transparent px-0 py-3 text-xl font-light focus:border-blue-600 focus:ring-0 transition-colors"
-                      placeholder="Enter GC fee percentage"
-                      min="0"
-                      max="100"
-                    />
-                  </div>
-                </div>
-                
-                <div className="pt-6 border-t border-slate-100">
-                  <div className="text-sm text-slate-500 italic">
-                    These client-specific parameters will be used to calculate annual ROI and revenue recognition projections.
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            {/* Multi-Project Overview */}
-            <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
-              <CardHeader className="pb-6">
-                <CardTitle className="text-2xl font-light text-slate-800 flex items-center gap-3">
-                  <Building className="h-6 w-6 text-blue-600" />
-                  Project Portfolio
-                </CardTitle>
-                
-                {/* Portfolio Summary */}
-                <div className="mt-4 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {savingsData.projects.length}
-                      </div>
-                      <div className="text-sm text-slate-600">Total Projects</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
-                        {calculations.totalSqFt?.toLocaleString() || '0'}
-                      </div>
-                      <div className="text-sm text-slate-600">Total Sq Ft</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-indigo-600">
-                        {formatCurrency(calculations.totalDevelopmentValue || 0)}
-                      </div>
-                      <div className="text-sm text-slate-600">Total Value</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-orange-600">
-                        {savingsData.workdaysSaved || 0}
-                      </div>
-                      <div className="text-sm text-slate-600">Days Saved Each</div>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              
-              <CardContent>
-                {/* Projects Table */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-slate-800">Project Details</h3>
-                    <Button 
-                      onClick={addProject}
-                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
-                    >
-                      <Plus size={16} />
-                      Add Project
-                    </Button>
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Project Name</th>
-                          <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Address</th>
-                          <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Sq Ft</th>
-                          <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Value</th>
-                          <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Date</th>
-                          <th className="text-center py-3 px-2 text-sm font-medium text-slate-600">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {savingsData.projects.map((project, index) => {
-                          const projectValue = project.estimatedDevelopmentValue || (project.projectSqFt * 650);
-                          return (
-                            <tr key={project.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="py-3 px-2">
-                                <input
-                                  type="text"
-                                  value={project.projectName}
-                                  onChange={(e) => handleProjectChange(project.id, 'projectName', e.target.value)}
-                                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:border-blue-500 focus:ring-0"
-                                  placeholder={`Project ${index + 1}`}
-                                />
-                              </td>
-                              <td className="py-3 px-2">
-                                <input
-                                  type="text"
-                                  value={project.projectAddress}
-                                  onChange={(e) => handleProjectChange(project.id, 'projectAddress', e.target.value)}
-                                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:border-blue-500 focus:ring-0"
-                                  placeholder="Enter address"
-                                />
-                              </td>
-                              <td className="py-3 px-2">
-                                <input
-                                  type="number"
-                                  value={project.projectSqFt || ''}
-                                  onChange={(e) => handleProjectChange(project.id, 'projectSqFt', e.target.value)}
-                                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                                  placeholder="3000"
-                                  min="0"
-                                />
-                              </td>
-                              <td className="py-3 px-2">
-                                <div className="text-right">
-                                  <div className="text-sm font-medium text-slate-800">
-                                    {formatCurrency(projectValue)}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    ${(projectValue / (project.projectSqFt || 1)).toFixed(0)}/sqft
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-3 px-2">
-                                <input
-                                  type="text"
-                                  value={project.estimateDate}
-                                  onChange={(e) => handleProjectChange(project.id, 'estimateDate', e.target.value)}
-                                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:border-blue-500 focus:ring-0"
-                                  placeholder="MM/DD/YYYY"
-                                />
-                              </td>
-                              <td className="py-3 px-2 text-center">
-                                {savingsData.projects.length > 1 && (
-                                  <Button
-                                    onClick={() => removeProject(project.id)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  >
-                                    <Minus size={14} />
-                                  </Button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Global Parameters */}
-                  <div className="mt-6 pt-6 border-t border-slate-200">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Project Details Section */}
+        <div className="bg-white shadow-md rounded-lg p-6 mb-8">
+          <h2 className="text-lg font-medium text-slate-800 mb-4">Project Details</h2>
+          <div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Client Name</label>
+              <input
+                type="text"
+                value={savingsData.client}
+                onChange={(e) => handleInputChange('client', e.target.value)}
+                className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:ring-0"
+                placeholder="Enter client name"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">GC and Developer Fee %</label>
+              <input
+                type="number"
+                value={savingsData.gcFeePercent || ''}
+                onChange={(e) => handleInputChange('gcFeePercent', e.target.value)}
+                className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:ring-0"
+                placeholder="Enter fee percentage"
+                min="0"
+                max="100"
+              />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border border-slate-200 rounded">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">#</th> {/* Line number column */}
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Phase</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Project Name</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Address</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Sq Ft</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Dev Cost/SqFt</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Est. Value</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Work Days Saved</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Duration (Months)</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {getProjectsByPhase(savingsData.projects).map((project, index) => (
+                  <tr key={project.id} className="border-t border-slate-100">
+                    <td className="px-2 py-2 text-xs text-slate-500 text-center">{index + 1}</td> {/* Line number */}
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={project.phase || index + 1}
+                        min={1}
+                        onChange={e => handleProjectChange(project.id, 'phase', e.target.value)}
+                        className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="Phase"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={project.projectName}
+                        onChange={(e) => handleProjectChange(project.id, 'projectName', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs focus:border-blue-500 focus:ring-0"
+                        placeholder="Project Name"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={project.projectAddress}
+                        onChange={(e) => handleProjectChange(project.id, 'projectAddress', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs focus:border-blue-500 focus:ring-0"
+                        placeholder="Address"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={project.projectSqFt || ''}
+                        onChange={(e) => handleProjectChange(project.id, 'projectSqFt', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="Sq Ft"
+                        min="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={formatCurrency(project.developmentCostPerSqFt || 0)}
+                        onChange={(e) => {
+                          const rawValue = e.target.value.replace(/[^0-9.]/g, '');
+                          handleProjectChange(project.id, 'developmentCostPerSqFt', rawValue);
+                        }}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="Cost/SqFt"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <span className="block w-full px-2 py-1 text-xs text-slate-700 bg-transparent rounded">
+                        {formatCurrency(project.estimatedDevelopmentValue || 0)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={project.daysSaved || ''}
+                        onChange={(e) => handleProjectChange(project.id, 'daysSaved', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="Days Saved"
+                        min="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={project.projectDuration || ''}
+                        onChange={(e) => handleProjectChange(project.id, 'projectDuration', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="Months"
+                        min="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      {savingsData.projects.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeProject(project.id)}
+                          className="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded"
+                          title="Remove Project"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {/* Total Row */}
+                <tr className="bg-slate-100 font-semibold">
+                  <td className="px-2 py-2 text-xs text-slate-700 text-center" colSpan={1}>
+                    {savingsData.projects.length} {/* Total number of projects */}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right" colSpan={2}>Total</td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
+                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.projectSqFt) || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
+                    {/* Weighted average Dev Cost/SqFt */}
+                    {(() => {
+                      const totalSqFt = savingsData.projects.reduce((sum, p) => sum + (Number(p.projectSqFt) || 0), 0);
+                      const totalDevCost = savingsData.projects.reduce((sum, p) => sum + ((Number(p.developmentCostPerSqFt) || 0) * (Number(p.projectSqFt) || 0)), 0);
+                      if (totalSqFt === 0) return '$0';
+                      return formatCurrency(totalDevCost / totalSqFt);
+                    })()}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
+                    {formatCurrency(savingsData.projects.reduce((sum, p) => sum + (Number(p.estimatedDevelopmentValue) || 0), 0))}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
+                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.daysSaved) || 0), 0)}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
+                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.projectDuration) || 0), 0)}
+                  </td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={addProject}
+              className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition"
+            >
+              Add Project
+            </button>
+          </div>
+        </div>
+
+        {/* Revenue Recognition Chart */}
+        <div className="bg-white shadow-md rounded-lg p-6 mt-8">
+          <h2 className="text-lg font-medium text-slate-800 mb-4">Monthly Revenue Opportunity Comparison</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={revenueChartData}>
+              <XAxis dataKey="month" label={{ value: 'Month', position: 'insideBottomRight', offset: -5 }} />
+              <YAxis 
+                label={{ value: 'Monthly Revenue', angle: -90, position: 'insideLeft' }} 
+                tickFormatter={(value: number) => {
+                  if (value >= 1_000_000) return `$${(value/1_000_000).toFixed(1)}M`;
+                  if (value >= 1_000) return `$${(value/1_000).toFixed(1)}K`;
+                  return `$${value}`;
+                }}
+                width={80}
+              />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Legend />
+              <Bar dataKey="stickBuilt" fill="#f87171" name="Stick Built (Monthly)" />
+              <Bar dataKey="tektra" fill="#34d399" name="TEKTRA (Monthly)" />
+              <Bar dataKey="opportunity" fill="#fbbf24" name="Head Start Value (TEKTRA)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Cumulative Revenue Opportunity Cost Chart + Yearly Summary Table */}
+        <div className="bg-white shadow-md rounded-lg p-6 mt-8">
+          <h2 className="text-lg font-medium text-slate-800 mb-4">
+            Cumulative Revenue Recognition & Opportunity Cost
+          </h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={cumulativeRevenueChartData}>
+              <XAxis dataKey="month" label={{ value: 'Month', position: 'insideBottomRight', offset: -5 }} />
+              <YAxis
+                label={{ value: 'Cumulative Revenue', angle: -90, position: 'insideLeft' }}
+                tickFormatter={(value: number) => {
+                  if (value >= 1_000_000) return `$${(value/1_000_000).toFixed(1)}M`;
+                  if (value >= 1_000) return `$${(value/1_000).toFixed(1)}K`;
+                  return `$${value}`;
+                }}
+                width={80}
+              />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Legend />
+              <Line type="monotone" dataKey="stickBuilt" stroke="#f87171" name="Stick Built (Cumulative)" strokeWidth={2} />
+              <Line type="monotone" dataKey="tektra" stroke="#34d399" name="TEKTRA (Cumulative)" strokeWidth={2} />
+              <Line type="monotone" dataKey="cumulativeOpportunity" stroke="#fbbf24" name="Cumulative Opportunity Value" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="stickBuiltProfit" stroke="#6366f1" name="Stick Built Profit" strokeDasharray="5 5" strokeWidth={2} />
+              <Line type="monotone" dataKey="tektraProfit" stroke="#06b6d4" name="TEKTRA Profit" strokeDasharray="5 5" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="text-xs text-slate-500 mt-2 mb-6">
+            The yellow line shows the cumulative opportunity value realized by recognizing revenue sooner with TEKTRA.
+          </div>
+          {/* Yearly Summary Table */}
+          <div>
+            <h3 className="text-base font-medium text-slate-800 mb-2">Yearly Revenue & Profit Summary</h3>
+            <table className="min-w-full border border-slate-200 rounded text-xs">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="px-2 py-2 font-semibold text-slate-600">Year</th>
+                  <th className="px-2 py-2 font-semibold text-slate-600">Stick Built Revenue</th>
+                  <th className="px-2 py-2 font-semibold text-slate-600">TEKTRA Revenue</th>
+                  <th className="px-2 py-2 font-semibold text-slate-600">Stick Built Profit</th>
+                  <th className="px-2 py-2 font-semibold text-slate-600">TEKTRA Profit</th>
+                  <th className="px-2 py-2 font-semibold text-slate-600">Opportunity Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {yearlySummary.map((row) => (
+                  <tr key={row.year} className="border-t border-slate-100">
+                    <td className="px-2 py-2 text-center">{row.year}</td>
+                    <td className="px-2 py-2 text-right">{formatCurrency(row.stickBuilt)}</td>
+                    <td className="px-2 py-2 text-right">{formatCurrency(row.tektra)}</td>
+                    <td className="px-2 py-2 text-right">{formatCurrency(row.stickBuiltProfit)}</td>
+                    <td className="px-2 py-2 text-right">{formatCurrency(row.tektraProfit)}</td>
+                    <td className="px-2 py-2 text-right">{formatCurrency(row.opportunity)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Cost Analysis Table */}
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-lg font-medium text-slate-800 mb-4">Cost Analysis</h2>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Cost Element</th>
+                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Cost</th>
+                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Stick Built</th>
+                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">TEKTRA</th>
+                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Savings</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+
+              {/* Division 1 Costs */}
+              {division1CostCategories.map((category) => {
+                const stickBuiltDailyCost = Number(savingsData[category.key as keyof SavingsData]) || 0;
+                const daysSaved = savingsData.projects.reduce((sum, project) => sum + (Number(project.daysSaved) || 0), 0);
+                const stickBuiltCost = stickBuiltDailyCost * daysSaved;
+                const tektraCost = 0; // TEKTRA eliminates Division 1 time-based costs
+                const savings = stickBuiltCost - tektraCost;
+
+                return (
+                  <tr key={category.key} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="py-3 px-2">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-3">
-                          Estimated Time Savings (workdays per project)
-                        </label>
+                        <div className="text-sm font-medium text-slate-800">{category.label}</div>
+                        <div className="text-xs text-slate-500">{category.description}</div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm">
+                      <div className="flex items-center justify-end">
                         <input
-                          type="number"
-                          value={savingsData.workdaysSaved || ''}
-                          onChange={(e) => handleInputChange('workdaysSaved', e.target.value)}
-                          className="w-full border-0 border-b-2 border-slate-200 bg-transparent px-0 py-3 text-xl font-light focus:border-blue-600 focus:ring-0 transition-colors"
-                          placeholder="Enter workdays saved per project"
+                          type="text"
+                          value={formatCurrency(stickBuiltDailyCost)} // Format input value to USD
+                          onChange={(e) => {
+                            const rawValue = e.target.value.replace(/[^0-9.]/g, ''); // Remove formatting for calculations
+                            handleInputChange(category.key as keyof SavingsData, rawValue);
+                          }}
+                          className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
                         />
+                        <span className="ml-2 text-xs text-slate-500">/day</span> {/* Add unit */}
                       </div>
-                      <div className="flex items-end">
-                        <div className="text-sm text-slate-500 italic">
-                          Project values are calculated at $650/sqft baseline. Time savings apply to each project in the portfolio.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-red-600">
+                      {formatCurrency(stickBuiltCost)} {/* Format Stick Built Cost */}
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-slate-400">
+                      {formatCurrency(tektraCost)} {/* Format TEKTRA Cost */}
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-green-600">
+                      {formatCurrency(savings)} {/* Format Savings */}
+                    </td>
+                  </tr>
+                );
+              })}
 
-            {/* Elegant Cost Breakdown Table */}
-            <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
-              <CardHeader className="pb-6">
-                <CardTitle className="text-2xl font-light text-slate-800 flex items-center gap-3">
-                  <Calculator className="h-6 w-6 text-blue-600" />
-                  Cost Analysis
-                </CardTitle>
-                {savingsData.client && (
-                  <div className="mt-4 p-4 bg-slate-50/50 rounded-lg">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              {/* Primary Construction Costs */}
+              {primaryCostElements.map((element) => {
+                const totalSqFt = savingsData.projects.reduce((sum, project) => sum + (project.projectSqFt || 0), 0); // Calculate total square footage
+                const totalCost = element.rate * totalSqFt; // Calculate total cost based on rate and total square footage
+
+                return (
+                  <tr key={element.key} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="py-3 px-2">
                       <div>
-                        <span className="text-slate-500">Client:</span>
-                        <div className="font-medium text-slate-800">{savingsData.client}</div>
+                        <div className="text-sm font-medium text-slate-800">{element.label}</div>
+                        <div className="text-xs text-slate-500">{element.description}</div>
                       </div>
-                      <div>
-                        <span className="text-slate-500">Portfolio:</span>
-                        <div className="font-medium text-slate-800">{savingsData.projects.length} Projects</div>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Total Value:</span>
-                        <div className="font-medium text-slate-800">{formatCurrency(calculations.totalDevelopmentValue || 0)}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left py-4 px-2 text-sm font-medium text-slate-600">Cost Element</th>
-                        <th className="text-right py-4 px-2 text-sm font-medium text-slate-600">Stick Built</th>
-                        <th className="text-right py-4 px-2 text-sm font-medium text-slate-600">TEKTRA</th>
-                        <th className="text-right py-4 px-2 text-sm font-medium text-slate-600">Savings</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      
-                      {/* Division 1 Summary Row - Moved to top */}
-                      <tr className="bg-blue-50/30">
-                        <td className="py-4 px-2">
-                          <button
-                            onClick={() => setIsDivision1TableExpanded(!isDivision1TableExpanded)}
-                            className="flex items-center gap-2 w-full text-left hover:text-blue-600 transition-colors"
-                          >
-                            {isDivision1TableExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            <div>
-                              <div className="font-medium text-slate-800">Division 1 Costs</div>
-                              <div className="text-xs text-slate-500">Time-based costs eliminated by TEKTRA ({division1CostCategories.length} items)</div>
-                            </div>
-                          </button>
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-red-600">
-                          {formatCurrency(calculations.division1TraditionalCost || 0)}
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-green-600">
-                          Eliminated
-                        </td>
-                        <td className="py-4 px-2 text-right font-bold text-green-600">
-                          {formatCurrency(calculations.division1TraditionalCost || 0)}
-                        </td>
-                      </tr>
-
-                      {/* Division 1 Detailed Rows (Expandable) */}
-                      {isDivision1TableExpanded && division1CostCategories.map((category) => {
-                        const dailyCost = Number(savingsData[category.key as keyof SavingsData]) || 0;
-                        const traditionalTotal = dailyCost * (savingsData.workdaysSaved || 0);
-                        
-                        return (
-                          <tr key={category.key} className="bg-blue-25 hover:bg-blue-50/20 transition-colors">
-                            <td className="py-3 px-2 pl-8">
-                              <div>
-                                <div className="text-sm font-medium text-slate-700">{category.label}</div>
-                                <div className="text-xs text-slate-500">{category.description}</div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 text-right text-sm text-red-600">
-                              {formatCurrency(traditionalTotal)}
-                            </td>
-                            <td className="py-3 px-2 text-right text-sm text-green-600 italic">
-                              Eliminated
-                            </td>
-                            <td className="py-3 px-2 text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={dailyCost || ''}
-                                onChange={(e) => handleInputChange(category.key as keyof SavingsData, e.target.value)}
-                                className="w-20 text-right border-0 border-b border-slate-200 bg-transparent px-1 py-1 text-sm text-slate-700 focus:border-blue-600 focus:ring-0 transition-colors"
-                                placeholder="0.00"
-                              />
-                              <div className="text-xs text-slate-500 mt-1">/day</div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {/* Primary Construction Elements */}
-                      {primaryCostElements.map((element) => {
-                        const totalCost = element.rate * (calculations.totalSqFt || 0);
-                        return (
-                          <tr key={element.key} className="hover:bg-slate-50/30 transition-colors">
-                            <td className="py-4 px-2">
-                              <div>
-                                <div className="font-medium text-slate-800">{element.label}</div>
-                                <div className="text-xs text-slate-500">${element.rate}/sqft</div>
-                              </div>
-                            </td>
-                            <td className="py-4 px-2 text-right font-medium text-red-600">
-                              {formatCurrency(totalCost)}
-                            </td>
-                            <td className="py-4 px-2 text-right font-medium text-slate-400">
-                              Included
-                            </td>
-                            <td className="py-4 px-2 text-right font-bold text-green-600">
-                              {formatCurrency(totalCost)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {/* GC Fee Row */}
-                      <tr className="bg-amber-50/30 hover:bg-amber-50/50 transition-colors">
-                        <td className="py-4 px-2">
-                          <div>
-                            <div className="font-medium text-slate-800">GC Fee</div>
-                            <div className="text-xs text-slate-500">{savingsData.gcFeePercent || 0}% of construction cost</div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-red-600">
-                          {formatCurrency(calculations.clientGcFee || 0)}
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-slate-400">
-                          N/A
-                        </td>
-                        <td className="py-4 px-2 text-right font-bold text-green-600">
-                          {formatCurrency(calculations.clientGcFee || 0)}
-                        </td>
-                      </tr>
-
-                      {/* TEKTRA System Cost Row */}
-                      <tr className="bg-green-50/50 hover:bg-green-50 transition-colors">
-                        <td className="py-4 px-2">
-                          <div>
-                            <div className="font-medium text-slate-800">TEKTRA System</div>
-                            <div className="text-xs text-slate-500">$88/sqft complete system</div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-slate-400">
-                          N/A
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-green-600">
-                          {formatCurrency(calculations.tektraSystemCost || 0)}
-                        </td>
-                        <td className="py-4 px-2 text-right font-medium text-slate-500">
-                          System Cost
-                        </td>
-                      </tr>
-
-                      {/* Total Row */}
-                      <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-lg">
-                        <td className="py-6 px-2 text-slate-800">Total Project Cost</td>
-                        <td className="py-6 px-2 text-right text-red-600">
-                          {formatCurrency(calculations.traditionalTotalCost || 0)}
-                        </td>
-                        <td className="py-6 px-2 text-right text-green-600">
-                          {formatCurrency(calculations.tektraTotalCost || 0)}
-                        </td>
-                        <td className="py-6 px-2 text-right text-green-700 text-xl">
-                          {formatCurrency(calculations.totalSavings || 0)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Premium Results Display - Takes 1 column */}
-          <div className="space-y-8">
-            
-            {/* Main Savings Display */}
-            <Card className="border-0 shadow-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white overflow-hidden relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-green-600/10"></div>
-              <CardContent className="relative p-8 text-center">
-                <div className="mb-6">
-                  <div className="text-sm font-medium text-slate-300 mb-2">Total Savings</div>
-                  <div className="text-4xl font-light mb-2">
-                    {formatCurrency(calculations.totalSavings || 0)}
-                  </div>
-                  <div className="text-lg text-green-400 font-medium">
-                    {formatPercent(calculations.totalSavingsPercent || 0)} saved
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 rounded-lg bg-white/10 backdrop-blur-sm">
-                    <span className="text-slate-300">Stick Built:</span>
-                    <span className="font-medium text-red-300">
-                      {formatCurrency(calculations.traditionalTotalCost || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 rounded-lg bg-white/10 backdrop-blur-sm">
-                    <span className="text-slate-300">TEKTRA:</span>
-                    <span className="font-medium text-green-300">
-                      {formatCurrency(calculations.tektraTotalCost || 0)}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Cost Breakdown */}
-            <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
-              <CardContent className="p-8">
-                <h3 className="text-xl font-light text-slate-800 mb-6">Cost Analysis</h3>
-                
-                <div className="space-y-6">
-                  {/* Construction Costs */}
-                  <div>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-sm font-medium text-slate-600">Construction</span>
-                      <span className="text-sm text-slate-500">$73/sqft → $88/sqft</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-green-500 to-blue-500 rounded-full" style={{width: '83%'}}></div>
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs text-slate-500">
-                      <span>Stick Built: ${(calculations.primaryConstructionTotal || 0).toLocaleString()}</span>
-                      <span>TEKTRA: ${(calculations.tektraSystemCost || 0).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  {/* Time Savings */}
-                  <div>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-sm font-medium text-slate-600">Time Savings</span>
-                      <span className="text-sm text-slate-500">{savingsData.workdaysSaved || 0} days</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full" style={{width: '50%'}}></div>
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs text-slate-500">
-                      <span>Division 1 Savings</span>
-                      <span>${((calculations.division1TraditionalCost || 0) - (calculations.division1TektraCost || 0)).toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Key Metrics */}
-                <div className="mt-8 pt-6 border-t border-slate-100">
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <div className="text-lg font-light text-slate-800">
-                        {formatCurrency(calculations.savingsPerSqFt || 0)}
-                      </div>
-                      <div className="text-xs text-slate-500">per sq ft saved</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-light text-slate-800">
-                        {(calculations.timeSavings || 0).toFixed(1)}
-                      </div>
-                      <div className="text-xs text-slate-500">weeks saved</div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ROI Card */}
-            <Card className="border-0 shadow-xl bg-gradient-to-br from-amber-50 to-yellow-50">
-              <CardContent className="p-8 text-center">
-                <div className="text-sm font-medium text-amber-700 mb-2">Annual ROI Potential</div>
-                <div className="text-3xl font-light text-amber-800 mb-2">
-                  {formatPercent(calculations.roiPercent || 0)}
-                </div>
-                <div className="text-sm text-amber-600">
-                  Based on {savingsData.projectsPerYear || 3} projects annually
-                </div>
-                <div className="mt-4 pt-4 border-t border-amber-200">
-                  <div className="text-lg font-medium text-amber-800">
-                    {formatCurrency(calculations.annualSavings || 0)}
-                  </div>
-                  <div className="text-xs text-amber-600">projected annual savings</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Premium Revenue Recognition Graph */}
-            <Card className="border-0 shadow-xl bg-gradient-to-br from-indigo-50 to-purple-50">
-              <CardContent className="p-8">
-                <div className="text-center mb-6">
-                  <h3 className="text-xl font-light text-slate-800 mb-2">Revenue Recognition Acceleration</h3>
-                  <p className="text-sm text-slate-600">Cumulative revenue impact over 12 months</p>
-                </div>
-                
-                {/* Manual Chart Inputs */}
-                <div className="mb-6 p-4 bg-white/50 rounded-lg border border-indigo-200">
-                  <div className="text-sm font-medium text-slate-700 mb-3">Chart Parameters</div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs text-slate-600 mb-2">
-                        Traditional Timeline (weeks)
-                      </label>
-                      <input
-                        type="number"
-                        value={savingsData.workdaysSaved ? (savingsData.workdaysSaved / 5) : 12}
-                        onChange={(e) => handleInputChange('workdaysSaved', Number(e.target.value) * 5)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:border-indigo-500 focus:ring-0"
-                        min="1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-600 mb-2">
-                        TEKTRA Timeline (weeks)
-                      </label>
-                      <input
-                        type="number"
-                        value={2}
-                        readOnly
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm bg-slate-100 text-slate-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-600 mb-2">
-                        Project Value ($)
-                      </label>
-                      <input
-                        type="number"
-                        value={calculations.totalDevelopmentValue || 1950000}
-                        readOnly
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm bg-slate-100 text-slate-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                    {/* Graph Container */}
-                    <div className="relative h-64 bg-white/50 rounded-lg p-4 overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-t from-indigo-100/20 to-transparent"></div>
-                      
-                      {/* Y-axis labels */}
-                      <div className="absolute left-2 top-4 bottom-4 flex flex-col justify-between text-xs text-slate-500">
-                        <span>${calculations.monthlyData && calculations.monthlyData.length > 0 ? (Math.max(...calculations.monthlyData.map((d: any) => d.tektra)) / 1000000).toFixed(1) : '1.0'}M</span>
-                        <span>${calculations.monthlyData && calculations.monthlyData.length > 0 ? (Math.max(...calculations.monthlyData.map((d: any) => d.tektra)) / 2000000).toFixed(1) : '0.5'}M</span>
-                        <span>$0</span>
-                      </div>
-                      
-                      {/* Graph area */}
-                      <div className="ml-12 mr-4 h-full relative">
-                        <svg viewBox="0 0 400 200" className="w-full h-full">
-                          <defs>
-                            <linearGradient id="tektraGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#10b981" stopOpacity="0.3"/>
-                              <stop offset="100%" stopColor="#10b981" stopOpacity="0.1"/>
-                            </linearGradient>
-                            <linearGradient id="traditionalGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3"/>
-                              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.1"/>
-                            </linearGradient>
-                          </defs>
-                          
-                          {/* Grid lines */}
-                          <g stroke="#e2e8f0" strokeWidth="0.5" opacity="0.5">
-                            {[0, 50, 100, 150, 200].map(y => (
-                              <line key={y} x1="0" y1={y} x2="400" y2={y} />
-                            ))}
-                            {[0, 50, 100, 150, 200, 250, 300, 350, 400].map(x => (
-                              <line key={x} x1={x} y1="0" x2={x} y2="200" />
-                            ))}
-                          </g>
-                          
-                          {/* TEKTRA line and area */}
-                          {calculations.monthlyData && calculations.monthlyData.length > 0 && (() => {
-                            const maxValue = Math.max(...calculations.monthlyData.map((d: any) => d.tektra));
-                            if (maxValue === 0) return null; // Prevent division by zero
-                            
-                            const tektraPoints = calculations.monthlyData.map((d: any, i: number) => ({
-                              x: (i / 11) * 400,
-                              y: 200 - (d.tektra / maxValue) * 200
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm">
+                      <div className="flex items-center justify-end">
+                        <input
+                          type="text"
+                          value={formatCurrency(element.rate)} // Format input value to USD
+                          onChange={(e) => {
+                            const rawValue = e.target.value.replace(/[^0-9.]/g, ''); // Remove formatting for calculations
+                            setSavingsData(prev => ({
+                              ...prev,
+                              primaryCostElements: prev.primaryCostElements.map((el) =>
+                                el.key === element.key
+                                  ? { ...el, rate: Number(rawValue) } // Preserve all properties and update only the rate
+                                  : el
+                              )
                             }));
-                            const traditionalPoints = calculations.monthlyData.map((d: any, i: number) => ({
-                              x: (i / 11) * 400,
-                              y: 200 - (d.traditional / maxValue) * 200
-                            }));
-                            
-                            return (
-                              <g>
-                                {/* TEKTRA area */}
-                                <path
-                                  d={`M 0,200 ${tektraPoints.map((p: {x: number, y: number}) => `L ${p.x},${p.y}`).join(' ')} L 400,200 Z`}
-                                  fill="url(#tektraGradient)"
-                                />
-                                {/* Traditional area */}
-                                <path
-                                  d={`M 0,200 ${traditionalPoints.map((p: {x: number, y: number}) => `L ${p.x},${p.y}`).join(' ')} L 400,200 Z`}
-                                  fill="url(#traditionalGradient)"
-                                />
-                                {/* TEKTRA line */}
-                                <path
-                                  d={`M ${tektraPoints.map((p: {x: number, y: number}) => `${p.x},${p.y}`).join(' L ')}`}
-                                  stroke="#10b981"
-                                  strokeWidth="3"
-                                  fill="none"
-                                  strokeLinecap="round"
-                                />
-                                {/* Traditional line */}
-                                <path
-                                  d={`M ${traditionalPoints.map((p: {x: number, y: number}) => `${p.x},${p.y}`).join(' L ')}`}
-                                  stroke="#ef4444"
-                                  strokeWidth="3"
-                                  fill="none"
-                                  strokeLinecap="round"
-                                  strokeDasharray="8,4"
-                                />
-                              </g>
-                            );
-                            })()}
-                        </svg>
-                        
-                        {/* Loading state when no data */}
-                        {(!calculations.monthlyData || calculations.monthlyData.length === 0) && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="text-slate-500 text-sm">Loading chart...</div>
-                          </div>
-                        )}
-                      </div>                      {/* X-axis labels */}
-                      <div className="absolute bottom-1 left-12 right-4 flex justify-between text-xs text-slate-500">
-                        <span>Q1</span>
-                        <span>Q2</span>
-                        <span>Q3</span>
-                        <span>Q4</span>
+                          }}
+                          className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
+                        />
+                        <span className="ml-2 text-xs text-slate-500">{element.unit}</span> {/* Add unit dynamically */}
                       </div>
-                    </div>
-                    
-                    {/* Legend */}
-                    <div className="flex justify-center gap-6 text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-0.5 bg-green-500"></div>
-                        <span className="text-slate-700">TEKTRA Accelerated</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-0.5 bg-red-500 border-dashed border-t-2 border-red-500"></div>
-                        <span className="text-slate-700">Traditional Timeline</span>
-                      </div>
-                    </div>
-                    
-                    {/* Key Metrics */}
-                    <div className="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-indigo-200">
-                      <div className="text-center">
-                        <div className="text-lg font-light text-slate-800">
-                          {savingsData.workdaysSaved ? ((savingsData.workdaysSaved / 5) * (savingsData.projectsPerYear || 1)).toFixed(0) : '0'}
-                        </div>
-                        <div className="text-xs text-slate-500">weeks saved annually</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-light text-slate-800">
-                          {calculations.monthlyData && calculations.monthlyData.length > 0 
-                            ? formatCurrency(calculations.monthlyData[11]?.difference || 0)
-                            : '$0'
-                          }
-                        </div>
-                        <div className="text-xs text-slate-500">revenue acceleration</div>
-                      </div>
-                    </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-red-600">
+                      {formatCurrency(totalCost)} {/* Display calculated total cost */}
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-slate-400">
+                      Included
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm text-green-600">
+                      {formatCurrency(totalCost)} {/* Display savings (same as total cost for now) */}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* GC Fee */}
+              <tr className="hover:bg-slate-50/30 transition-colors">
+                <td className="py-3 px-2">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">GC Fee</div>
+                    <div className="text-xs text-slate-500">Calculated based on total construction costs</div>
                   </div>
-              </CardContent>
-            </Card>
-          </div>
+                </td>
+                <td className="py-3 px-2 text-right text-sm">
+                  <input
+                    type="number"
+                    value={savingsData.gcFeePercent || ''}
+                    onChange={(e) => handleInputChange('gcFeePercent', e.target.value)}
+                    className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
+                    placeholder="Enter fee percentage"
+                    min="0"
+                    max="100"
+                  />
+                </td>
+                <td className="py-3 px-2 text-right text-sm text-red-600">
+                  {formatCurrency(calculations.traditionalTotalCost * (savingsData.gcFeePercent / 100) || 0)} {/* Stick Built GC Fee */}
+                </td>
+                <td className="py-3 px-2 text-right text-sm text-slate-400">
+                  Included
+                </td>
+                <td className="py-3 px-2 text-right text-sm text-green-600">
+                  {formatCurrency(calculations.traditionalTotalCost * (savingsData.gcFeePercent / 100) || 0)} {/* Savings */}
+                </td>
+              </tr>
+
+              {/* Total Project Costs */}
+              <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-lg">
+                <td className="py-6 px-2 text-slate-800">Total Project Cost</td>
+                <td className="py-6 px-2 text-right text-slate-400">
+                  N/A
+                </td>
+                <td className="py-6 px-2 text-right text-red-600">
+                  {formatCurrency(calculations.traditionalTotalCost || 0)}
+                </td>
+                <td className="py-6 px-2 text-right text-green-600">
+                  {formatCurrency(calculations.tektraTotalCost || 0)}
+                </td>
+                <td className="py-6 px-2 text-right text-green-700 text-xl">
+                  {formatCurrency(calculations.totalSavings || 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
 }
+

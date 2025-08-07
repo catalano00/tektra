@@ -11,7 +11,7 @@ datasource db {
 model Project {
   currentStatus                String
   projectId                    String      @id
-  client                       String
+  clientId                     String
   streetaddress                String
   city                         String
   state                        String
@@ -27,6 +27,8 @@ model Project {
   notes                        String?
   updatedAt                    DateTime?   @default(now()) @updatedAt
   components                   Component[]
+
+  Client         Client   @relation(fields: [clientId], references: [id])
 
   @@map("projects")
 }
@@ -153,4 +155,32 @@ model StagingData {
   status      String   @default("pending") // Status: pending, processed, failed
   createdAt   DateTime @default(now()) // Timestamp for when the data was received
   updatedAt   DateTime @updatedAt // Automatically updated timestamp
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  phone     String
+  address   String
+  city      String
+  state     String
+  zip       String
+  projects  Project[]
+  leads     Lead[]
+}
+
+model Lead {
+  id          String   @id @default(uuid())
+  clientId    String
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  status      String?      // e.g. "new", "contacted", "qualified", etc.
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  Client      Client   @relation(fields: [clientId], references: [id])
 }
