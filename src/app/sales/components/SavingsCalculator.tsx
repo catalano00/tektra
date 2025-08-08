@@ -36,6 +36,7 @@ interface ProjectData {
   estimateDate: string;
   projectDuration?: number;
   phase?: number; // <-- Add phase
+  startMonth?: number; // <-- NEW: drives project start (1-based month)
 }
 
 interface SavingsData {
@@ -86,6 +87,10 @@ interface SavingsData {
   // Timeline
   traditionalTimelineWeeks: number;
   workdaysSaved: number;
+
+  // NEW: Sales assumptions
+  salesPricePerSqFt: number;
+  homesSoldPerPhase: Record<number, number>;
 }
 
 const primaryCostElements = [
@@ -113,6 +118,7 @@ const initialSavingsData: SavingsData = {
       developmentCostPerSqFt: 650, // Default: $650 per sqft
       estimatedDevelopmentValue: 3000 * 650, // Default calculated value
       phase: 1,
+      startMonth: 1, // <-- default start
     }
   ],
 
@@ -123,7 +129,7 @@ const initialSavingsData: SavingsData = {
   architecturalDesign: 300.00,
   engineeringDesign: 100.00,
   buildersRiskInsurance: 55.20,
-  lotPropertyCost: 0, // hard to calculate ROI as noted
+  lotPropertyCost: 0,
   adminLoanMarketingFees: 138.00,
   supervision: 750.00,
   genSkilledLabor: 350.00,
@@ -142,12 +148,15 @@ const initialSavingsData: SavingsData = {
 
   // Timeline
   traditionalTimelineWeeks: 0,
-  workdaysSaved: 0 // 
-  ,
+  workdaysSaved: 0,
 
   overallReductionPercent: 0,
   timeReductionPercent: 0,
   primaryCostElements: primaryCostElements, // Initialize with the predefined array
+
+  // NEW: Sales assumptions
+  salesPricePerSqFt: 850,               // luxury sales basis
+  homesSoldPerPhase: { 1: 0 },          // editable per phase below
 };
 
 const division1CostCategories = [
@@ -186,7 +195,7 @@ export default function SavingsCalculator() {
     return [...projects].sort((a, b) => (a.phase || 1) - (b.phase || 1));
   }
 
-  // Helper: get project start months based on phase sequencing (fractional months allowed)
+  // Helper: get project start months based on explicit startMonth or phase sequencing
   function getProjectStartMonths(projects: ProjectData[]) {
     const sorted = getProjectsByPhase(projects);
     let startMonths: number[] = [];
@@ -197,23 +206,21 @@ export default function SavingsCalculator() {
     const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
     for (const phase of uniquePhases) {
       phaseStart[phase] = currentMonth;
-      // Find all projects in this phase
       const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
-      // The phase ends after the longest project in this phase (allow fractional months)
       const maxDuration = Math.max(...projectsInPhase.map(p => Number(p.projectDuration) || 0), 0);
       phaseEnd[phase] = currentMonth + maxDuration;
       currentMonth = phaseEnd[phase];
     }
 
-    // Assign start months for each project based on its phase (fractional allowed)
+    // Respect explicit project.startMonth if provided; otherwise use phase start
     for (let i = 0; i < sorted.length; i++) {
       const phase = sorted[i].phase || 1;
-      startMonths[i] = phaseStart[phase];
+      startMonths[i] = Number(sorted[i].startMonth) || phaseStart[phase];
     }
     return startMonths;
   }
 
-  // Helper: get TEKTRA project start months based on phase sequencing (fractional months allowed)
+  // Helper: TEKTRA start months (use explicit startMonth when provided; otherwise phase sequence with reduced durations)
   function getTektraProjectStartMonths(projects: ProjectData[]) {
     const sorted = getProjectsByPhase(projects);
     let startMonths: number[] = [];
@@ -224,14 +231,11 @@ export default function SavingsCalculator() {
     const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
     for (const phase of uniquePhases) {
       phaseStart[phase] = currentMonth;
-      // Find all projects in this phase
       const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
-      // The phase ends after the longest TEKTRA duration in this phase (fractional allowed)
       const maxTektraDuration = Math.max(
         ...projectsInPhase.map(p => {
           const duration = Number(p.projectDuration) || 0;
-          const daysSaved = Number(p.daysSaved) || 0;
-          const monthsSaved = daysSaved / 21.67;
+          const monthsSaved = (Number(p.daysSaved) || 0) / 21.67;
           return Math.max(duration - monthsSaved, 1);
         }),
         0
@@ -240,10 +244,9 @@ export default function SavingsCalculator() {
       currentMonth = phaseEnd[phase];
     }
 
-    // Assign start months for each project based on its phase (fractional allowed)
     for (let i = 0; i < sorted.length; i++) {
       const phase = sorted[i].phase || 1;
-      startMonths[i] = phaseStart[phase];
+      startMonths[i] = Number(sorted[i].startMonth) || phaseStart[phase];
     }
     return startMonths;
   }
@@ -253,40 +256,58 @@ export default function SavingsCalculator() {
     const startMonths = getProjectStartMonths(sorted);
     const tektraStartMonths = getTektraProjectStartMonths(sorted);
 
-    // Calculate max months for stick built (phased)
-    let maxMonths = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const endMonth = (startMonths[i] || 1) + duration - 1;
-      if (endMonth > maxMonths) maxMonths = endMonth;
-    }
+    // Calculate stick/tektra end months and phase completion months
+    const stickEndMonths: number[] = [];
+    const tektraEndMonths: number[] = [];
+    const phases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
 
-    // Calculate max months for TEKTRA (phased)
+    let maxMonths = 0;
     let maxTektraMonths = 0;
+
+    // Per-phase aggregates for sales recognition
+    const phaseTotals: Record<number, { totalSqFt: number; count: number; stickEnd: number; tektraEnd: number }> = {};
+
     for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const daysSaved = Number(sorted[i].daysSaved) || 0;
+      const p = sorted[i];
+      const duration = Number(p.projectDuration) || 0;
+      const daysSaved = Number(p.daysSaved) || 0;
       const monthsSaved = daysSaved / 21.67;
       const tektraDuration = Math.max(duration - monthsSaved, 1);
-      const endMonth = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
-      if (endMonth > maxTektraMonths) maxTektraMonths = endMonth;
+
+      const sEnd = (startMonths[i] || 1) + duration - 1;
+      const tEnd = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
+      stickEndMonths[i] = sEnd;
+      tektraEndMonths[i] = tEnd;
+
+      maxMonths = Math.max(maxMonths, sEnd);
+      maxTektraMonths = Math.max(maxTektraMonths, tEnd);
+
+      const phase = p.phase || 1;
+      const agg = phaseTotals[phase] || { totalSqFt: 0, count: 0, stickEnd: 0, tektraEnd: 0 };
+      agg.totalSqFt += Number(p.projectSqFt) || 0;
+      agg.count += 1;
+      agg.stickEnd = Math.max(agg.stickEnd, sEnd);
+      agg.tektraEnd = Math.max(agg.tektraEnd, tEnd);
+      phaseTotals[phase] = agg;
     }
 
-    // --- Ensure head start value is shown in the monthly chart ---
-    // Find the month where TEKTRA finishes (lastTektraMonth)
-    const lastTektraMonth = maxTektraMonths;
     if (!maxMonths && !maxTektraMonths) return [];
 
-    let chartData: { month: number; stickBuilt: number; tektra: number; opportunity: number }[] = [];
-    let cumulativeTektra = 0;
-    let cumulativeStick = 0;
-    let headStartValue = 0;
-    let headStartMonth = null;
+    const lastTektraMonth = maxTektraMonths;
+    let chartData: {
+      month: number;
+      stickBuilt: number;
+      tektra: number;
+      opportunity: number;
+      devSalesStick: number;   // NEW
+      devSalesTektra: number;  // NEW
+    }[] = [];
 
     for (let month = 1; month <= Math.max(maxMonths, maxTektraMonths); month++) {
       let stickBuilt = 0;
       let tektra = 0;
-      // Stick Built
+
+      // Stick Built (even recognition)
       for (let i = 0; i < sorted.length; i++) {
         const duration = Number(sorted[i].projectDuration) || 0;
         const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
@@ -295,7 +316,8 @@ export default function SavingsCalculator() {
           stickBuilt += value / duration;
         }
       }
-      // TEKTRA
+
+      // TEKTRA (even recognition over reduced duration)
       for (let i = 0; i < sorted.length; i++) {
         const duration = Number(sorted[i].projectDuration) || 0;
         const daysSaved = Number(sorted[i].daysSaved) || 0;
@@ -312,30 +334,36 @@ export default function SavingsCalculator() {
           }
         }
       }
-      cumulativeStick += stickBuilt;
-      if (month <= lastTektraMonth) {
-        cumulativeTektra += tektra;
-      }
-      // Capture head start value and the month it occurs
-      if (month === lastTektraMonth) {
-        headStartValue = cumulativeTektra - cumulativeStick;
-        headStartMonth = month;
-      }
+
+      // NEW: Development sales revenue recognized on phase completion
+      let devSalesStick = 0;
+      let devSalesTektra = 0;
+
+      phases.forEach(phase => {
+        const agg = phaseTotals[phase];
+        const homes = savingsData.homesSoldPerPhase[phase] || 0;
+        if (!agg || homes <= 0) return;
+
+        const avgSqFtPerHome = agg.count > 0 ? agg.totalSqFt / agg.count : 0;
+        const phaseRevenue = homes * avgSqFtPerHome * (savingsData.salesPricePerSqFt || 0);
+
+        if (month === agg.stickEnd) devSalesStick += phaseRevenue;
+        if (month === agg.tektraEnd) devSalesTektra += phaseRevenue;
+      });
+
+      // Opportunity carry-over (unchanged)
       let opportunity = 0;
-      // If TEKTRA finishes before stick built, show head start value as the stick built revenue for the remaining months
-      if (month > lastTektraMonth && month <= maxMonths && headStartValue > 0) {
-        // Opportunity is the stick built revenue for this month (potential new project revenue)
+      if (month > lastTektraMonth && month <= maxMonths) {
         opportunity = stickBuilt;
       }
-      // Show the original head start value in the first month after TEKTRA finishes if there are no more stick built months
-      if (month === lastTektraMonth + 1 && maxMonths <= lastTektraMonth && headStartValue > 0) {
-        opportunity = headStartValue;
-      }
+
       chartData.push({
         month,
         stickBuilt,
         tektra,
-        opportunity
+        opportunity,
+        devSalesStick,
+        devSalesTektra,
       });
     }
     return chartData;
@@ -717,13 +745,29 @@ export default function SavingsCalculator() {
                 max="100"
               />
             </div>
+            {/* NEW: Sales price per sqft */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Sales Price / Sq Ft</label>
+              <input
+                type="text"
+                value={formatCurrency(savingsData.salesPricePerSqFt || 0)}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9.]/g, '');
+                  handleInputChange('salesPricePerSqFt', raw);
+                }}
+                className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-right focus:border-blue-500 focus:ring-0"
+                placeholder="$ / sq ft"
+                inputMode="decimal"
+              />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border border-slate-200 rounded">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">#</th> {/* Line number column */}
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">#</th>
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Phase</th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Start Month</th> {/* NEW */}
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Project Name</th>
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Address</th>
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Sq Ft</th>
@@ -731,13 +775,14 @@ export default function SavingsCalculator() {
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Est. Value</th>
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Work Days Saved</th>
                   <th className="px-2 py-2 text-xs font-semibold text-slate-600">Duration (Months)</th>
-                  <th className="px-2 py-2"></th>
+                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">TEKTRA Duration</th> {/* NEW */}
+                  <th className="px-2 py-2" />
                 </tr>
               </thead>
               <tbody>
                 {getProjectsByPhase(savingsData.projects).map((project, index) => (
                   <tr key={project.id} className="border-t border-slate-100">
-                    <td className="px-2 py-2 text-xs text-slate-500 text-center">{index + 1}</td> {/* Line number */}
+                    <td className="px-2 py-2 text-xs text-slate-500 text-center">{index + 1}</td>
                     <td className="px-2 py-2">
                       <input
                         type="number"
@@ -746,6 +791,17 @@ export default function SavingsCalculator() {
                         onChange={e => handleProjectChange(project.id, 'phase', e.target.value)}
                         className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
                         placeholder="Phase"
+                      />
+                    </td>
+                    {/* NEW: Start Month */}
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={project.startMonth || ''}
+                        onChange={(e) => handleProjectChange(project.id, 'startMonth', e.target.value)}
+                        className="w-20 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
+                        placeholder="1"
+                        min="1"
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -812,6 +868,14 @@ export default function SavingsCalculator() {
                         placeholder="Months"
                         min="0"
                       />
+                    </td>
+                    {/* NEW: Computed TEKTRA duration */}
+                    <td className="px-2 py-2 text-right text-xs text-slate-700">
+                      {(() => {
+                        const monthsSaved = (Number(project.daysSaved) || 0) / 21.67;
+                        const tektraDuration = Math.max((Number(project.projectDuration) || 0) - monthsSaved, 1);
+                        return `${tektraDuration.toFixed(2)}`;
+                      })()}
                     </td>
                     <td className="px-2 py-2 text-center">
                       {savingsData.projects.length > 1 && (
