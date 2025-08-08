@@ -1,1114 +1,607 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar // <-- Add these imports
-} from 'recharts';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { 
-  Percent, 
-  TrendingDown, 
-  TrendingUp, 
-  DollarSign, 
-  Clock,
-  Zap,
-  Award,
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import {
+  Building2,
+  DollarSign,
+  Gauge,
+  CalendarClock,
+  Factory,
   BarChart3,
-  Calculator,
-  Building,
+  PiggyBank,
+  FileCheck2,
+  TrendingUp,
   Users,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Minus
-} from 'lucide-react';
+  Wand2,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Bar,
+  CartesianGrid,
+  Legend,
+  BarChart, // ← add this
+} from "recharts";
 
-interface ProjectData {
-  daysSaved: string;
-  id: string;
-  projectName: string;
-  projectAddress: string;
-  projectSqFt: number;
-  estimatedDevelopmentValue?: number;
-  developmentCostPerSqFt?: number;
-  estimateDate: string;
-  projectDuration?: number;
-  phase?: number; // <-- Add phase
-}
+/**
+ * TEKTRA Savings & Benefits Page
+ * Updated: Adds a stick‑built vs TEKTRA multi‑phase comparison planner for GCs/Developers.
+ *
+ * Accessibility: semantic landmarks, labeled inputs, aria-live for computed values,
+ * high-contrast, keyboard-friendly, reduced motion support.
+ */
 
-interface SavingsData {
-  primaryCostElements: {
-    key: string;
-    label: string;
-    code: string;
-    description: string;
-    unit: string;
-    rate: number;
-  }[];
-  // Client Details
-  projectsPerYear: number;
-  gcFeePercent: number;
-
-  // Project Info
-  client: string;
-  projects: ProjectData[];
-
-  // Project Cost Elements (from cost codes)
-  framingMaterials: number;
-  framingLabor: number;
-  doorWindowInstall: number;
-  architecturalDesign: number;
-  engineeringDesign: number;
-  buildersRiskInsurance: number;
-  lotPropertyCost: number;
-  adminLoanMarketingFees: number;
-  supervision: number;
-  genSkilledLabor: number;
-  preConServices: number;
-  tempFencing: number;
-  bundledUtilities: number;
-  jobsiteTrailer: number;
-  jobToilet: number;
-  storage: number;
-  dumpsters: number;
-  infrastructureExcavation: number;
-
-  // Fees and Insurance
-  gcDeveloperFeePercent: number;
-  generalLiabilityInsurancePercent: number;
-
-  // TEKTRA Reductions (percentages)
-  overallReductionPercent: number;
-  timeReductionPercent: number;
-
-  // Timeline
-  traditionalTimelineWeeks: number;
-  workdaysSaved: number;
-}
-
-const primaryCostElements = [
-  { key: 'framingMaterials', label: 'Framing Materials incl Waste', code: 'FRAM-MAT', description: 'Materials and waste for framing construction', unit: '/sqft', rate: 35 },
-  { key: 'framingLabor', label: 'Framing Labor including CO\'s', code: 'FRAM-LAB', description: 'Labor costs including change orders for framing', unit: '/sqft', rate: 30 },
-  { key: 'doorWindowInstall', label: 'Door and Window Install', code: 'DW-INST', description: 'Installation costs for doors and windows', unit: '/sqft', rate: 8 }
-];
-
-const initialSavingsData: SavingsData = {
-  // Client Details
-  projectsPerYear: 0,
-  gcFeePercent: 0,
-
-  // Project Info
-  client: '',
-  projects: [
-    {
-      id: '1',
-      projectName: '',
-      projectAddress: '',
-      projectSqFt: 3000, // Default: 3000 sqft
-      estimateDate: '',
-      daysSaved: '20',   // Default: 20 work days saved
-      projectDuration: 10, // Default: 10 months
-      developmentCostPerSqFt: 650, // Default: $650 per sqft
-      estimatedDevelopmentValue: 3000 * 650, // Default calculated value
-      phase: 1,
-    }
-  ],
-
-  // Project Cost Elements (from cost codes with calculated values)
-  framingMaterials: 35.00,
-  framingLabor: 30.00,
-  doorWindowInstall: 8,
-  architecturalDesign: 300.00,
-  engineeringDesign: 100.00,
-  buildersRiskInsurance: 55.20,
-  lotPropertyCost: 0, // hard to calculate ROI as noted
-  adminLoanMarketingFees: 138.00,
-  supervision: 750.00,
-  genSkilledLabor: 350.00,
-  preConServices: 255.00,
-  tempFencing: 46.15,
-  bundledUtilities: 23.08,
-  jobsiteTrailer: 18.46,
-  jobToilet: 10.00,
-  storage: 20.00,
-  dumpsters: 125.00,
-  infrastructureExcavation: 60.00,
-
-  // Fees and Insurance (percentages)
-  gcDeveloperFeePercent: 0,
-  generalLiabilityInsurancePercent: 0,
-
-  // Timeline
-  traditionalTimelineWeeks: 0,
-  workdaysSaved: 0 // 
-  ,
-
-  overallReductionPercent: 0,
-  timeReductionPercent: 0,
-  primaryCostElements: primaryCostElements, // Initialize with the predefined array
+// Defaults for calculator assumptions (simplified)
+const DEFAULTS = {
+  projectSqft: 120000,
+  avgSalePerSqft: 350,   // Development sales revenue basis
+  panelizedCostPerSqft: 210, // Construction revenue (TEKTRA contract)
+  traditionalCostPerSqft: 235,
+  marginTargetPct: 18,
 };
 
-const division1CostCategories = [
-  { key: 'architecturalDesign', label: 'Architectural Design', code: 'ARCH-DES', description: 'less CA required on site during project (RFI\'s, CO\'s, etc)' },
-  { key: 'engineeringDesign', label: 'Engineering Design', code: 'ENG-DES', description: 'less CA required on site during project (RFI\'s, CO\'s, etc)' },
-  { key: 'buildersRiskInsurance', label: 'Builder\'s Risk and GL Insurance', code: 'BLDR-INS', description: 'ability to provide product quicker can reduce Ins costs' },
-  { key: 'lotPropertyCost', label: 'Lot and Property Cost', code: 'LOT-PROP', description: 'quicker product delivery means quicker sale and quick return' },
-  { key: 'adminLoanMarketingFees', label: 'Admin, Loan, Marketing, Broker fees', code: 'ADMIN-FEE', description: 'quicker product delivery means less fees' },
-  { key: 'supervision', label: 'Supervision', code: 'SUPERV', description: 'quicker product delivery equals much less PM/Supervision labor' },
-  { key: 'genSkilledLabor', label: 'Gen & Skilled Labor', code: 'GEN-LAB', description: 'quicker product delivery equals much less Gen/Skilled labor' },
-  { key: 'preConServices', label: 'Pre Con Services', code: 'PRECON', description: 'pre-con costs are mostly absorbed in Tektra\'s scope' },
-  { key: 'tempFencing', label: 'Temp Fencing', code: 'TEMP-FENCE', description: 'less project duration means less monthly costs' },
-  { key: 'bundledUtilities', label: 'Bundled Utilities', code: 'UTILITIES', description: 'less project duration means less monthly costs' },
-  { key: 'jobsiteTrailer', label: 'Jobsite Trailer', code: 'TRAILER', description: 'less project duration means less monthly costs' },
-  { key: 'jobToilet', label: 'Job Toilet', code: 'TOILET', description: 'less project duration means less monthly costs' },
-  { key: 'storage', label: 'Storage', code: 'STORAGE', description: 'less project duration means less monthly costs' },
-  { key: 'dumpsters', label: 'Dumpsters', code: 'DUMPSTER', description: 'less project duration means less monthly costs, less waste w/TEKTRA' },
-  { key: 'infrastructureExcavation', label: 'Infrastructure, Excavation and Fill', code: 'INFRA-EXC', description: 'quicker framing means no re-mobilization' }
-];
+function currency(n: number) {
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
 
+function percent(n: number) {
+  return `${n.toFixed(0)}%`;
+}
 
-export default function SavingsCalculator() {
-  const [savingsData, setSavingsData] = useState<SavingsData>(initialSavingsData);
-  const [calculations, setCalculations] = useState<any>({ monthlyData: [] });
-  const [isDivision1Expanded, setIsDivision1Expanded] = useState(false);
-  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
-  const [isDivision1TableExpanded, setIsDivision1TableExpanded] = useState(false);
+function weeksBetween(a: Date, b: Date) {
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / (7 * 24 * 3600 * 1000)));
+}
 
-  useEffect(() => {
-    const calc = calculateSavings(savingsData);
-    setCalculations(calc);
-  }, [savingsData]);
+function monthsBetween(a: Date, b: Date) {
+  const msPerMonth = 30.4375 * 24 * 3600 * 1000; // avg month
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / msPerMonth));
+}
 
-  // Helper: get projects sorted by phase
-  function getProjectsByPhase(projects: ProjectData[]) {
-    return [...projects].sort((a, b) => (a.phase || 1) - (b.phase || 1));
-  }
+function addMonths(d: Date, months: number) {
+  const nd = new Date(d);
+  nd.setMonth(nd.getMonth() + months);
+  return nd;
+}
 
-  // Helper: get project start months based on phase sequencing (fractional months allowed)
-  function getProjectStartMonths(projects: ProjectData[]) {
-    const sorted = getProjectsByPhase(projects);
-    let startMonths: number[] = [];
-    let phaseStart: Record<number, number> = {};
-    let phaseEnd: Record<number, number> = {};
+function toISO(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
-    let currentMonth = 1;
-    const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
-    for (const phase of uniquePhases) {
-      phaseStart[phase] = currentMonth;
-      // Find all projects in this phase
-      const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
-      // The phase ends after the longest project in this phase (allow fractional months)
-      const maxDuration = Math.max(...projectsInPhase.map(p => Number(p.projectDuration) || 0), 0);
-      phaseEnd[phase] = currentMonth + maxDuration;
-      currentMonth = phaseEnd[phase];
-    }
+export default function SavingsPage() {
+  const prefersReducedMotion = useReducedMotion();
+  const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
 
-    // Assign start months for each project based on its phase (fractional allowed)
-    for (let i = 0; i < sorted.length; i++) {
-      const phase = sorted[i].phase || 1;
-      startMonths[i] = phaseStart[phase];
-    }
-    return startMonths;
-  }
+  // Inputs (simplified to core value props)
+  const [projectName, setProjectName] = useState("Aspen Villas");
+  const [developer, setDeveloper] = useState("Summit Peak Dev Co.");
+  const [leadName, setLeadName] = useState("Gary Johnson");
+  const [market, setMarket] = useState("Mountain West");
+  const [projectSqft, setProjectSqft] = useState(DEFAULTS.projectSqft);
+  const [avgSalePerSqft, setAvgSalePerSqft] = useState(DEFAULTS.avgSalePerSqft);
+  const [panelCost, setPanelCost] = useState(DEFAULTS.panelizedCostPerSqft);
+  const [tradCost, setTradCost] = useState(DEFAULTS.traditionalCostPerSqft);
+  const [marginTargetPct, setMarginTargetPct] = useState(DEFAULTS.marginTargetPct);
 
-  // Helper: get TEKTRA project start months based on phase sequencing (fractional months allowed)
-  function getTektraProjectStartMonths(projects: ProjectData[]) {
-    const sorted = getProjectsByPhase(projects);
-    let startMonths: number[] = [];
-    let phaseStart: Record<number, number> = {};
-    let phaseEnd: Record<number, number> = {};
+  // Key Dates
+  const [startDate, setStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [closingDate, setClosingDate] = useState<string>(new Date(Date.now() + 120 * 24 * 3600 * 1000).toISOString().slice(0, 10));
 
-    let currentMonth = 1;
-    const uniquePhases = Array.from(new Set(sorted.map(p => p.phase || 1))).sort((a, b) => a - b);
-    for (const phase of uniquePhases) {
-      phaseStart[phase] = currentMonth;
-      // Find all projects in this phase
-      const projectsInPhase = sorted.filter(p => (p.phase || 1) === phase);
-      // The phase ends after the longest TEKTRA duration in this phase (fractional allowed)
-      const maxTektraDuration = Math.max(
-        ...projectsInPhase.map(p => {
-          const duration = Number(p.projectDuration) || 0;
-          const daysSaved = Number(p.daysSaved) || 0;
-          const monthsSaved = daysSaved / 21.67;
-          return Math.max(duration - monthsSaved, 1);
-        }),
-        0
-      );
-      phaseEnd[phase] = currentMonth + maxTektraDuration;
-      currentMonth = phaseEnd[phase];
-    }
+  // Multi‑phase planner inputs
+  const [totalHomes, setTotalHomes] = useState(24);
+  const [phases, setPhases] = useState(6);
+  const [homesPerPhase, setHomesPerPhase] = useState(4);
+  const [phaseSpacingMonths, setPhaseSpacingMonths] = useState(3);
+  const [stickMonthsPerPhase, setStickMonthsPerPhase] = useState(10);
+  const [tektraMonthsPerPhase, setTektraMonthsPerPhase] = useState(6);
+  const [tektraJit, setTektraJit] = useState(true);
 
-    // Assign start months for each project based on its phase (fractional allowed)
-    for (let i = 0; i < sorted.length; i++) {
-      const phase = sorted[i].phase || 1;
-      startMonths[i] = phaseStart[phase];
-    }
-    return startMonths;
-  }
-
-  function getRevenueChartData(projects: ProjectData[]) {
-    const sorted = getProjectsByPhase(projects);
-    const startMonths = getProjectStartMonths(sorted);
-    const tektraStartMonths = getTektraProjectStartMonths(sorted);
-
-    // Calculate max months for stick built (phased)
-    let maxMonths = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const endMonth = (startMonths[i] || 1) + duration - 1;
-      if (endMonth > maxMonths) maxMonths = endMonth;
-    }
-
-    // Calculate max months for TEKTRA (phased)
-    let maxTektraMonths = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const daysSaved = Number(sorted[i].daysSaved) || 0;
-      const monthsSaved = daysSaved / 21.67;
-      const tektraDuration = Math.max(duration - monthsSaved, 1);
-      const endMonth = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
-      if (endMonth > maxTektraMonths) maxTektraMonths = endMonth;
-    }
-
-    // --- Ensure head start value is shown in the monthly chart ---
-    // Find the month where TEKTRA finishes (lastTektraMonth)
-    const lastTektraMonth = maxTektraMonths;
-    if (!maxMonths && !maxTektraMonths) return [];
-
-    let chartData: { month: number; stickBuilt: number; tektra: number; opportunity: number }[] = [];
-    let cumulativeTektra = 0;
-    let cumulativeStick = 0;
-    let headStartValue = 0;
-    let headStartMonth = null;
-
-    for (let month = 1; month <= Math.max(maxMonths, maxTektraMonths); month++) {
-      let stickBuilt = 0;
-      let tektra = 0;
-      // Stick Built
-      for (let i = 0; i < sorted.length; i++) {
-        const duration = Number(sorted[i].projectDuration) || 0;
-        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
-        const start = startMonths[i];
-        if (month >= start && month < start + duration && duration > 0) {
-          stickBuilt += value / duration;
-        }
-      }
-      // TEKTRA
-      for (let i = 0; i < sorted.length; i++) {
-        const duration = Number(sorted[i].projectDuration) || 0;
-        const daysSaved = Number(sorted[i].daysSaved) || 0;
-        const monthsSaved = daysSaved / 21.67;
-        const tektraDuration = Math.max(duration - monthsSaved, 1);
-        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
-        const start = tektraStartMonths[i];
-        if (tektraDuration > 0 && month >= start && month < start + Math.ceil(tektraDuration)) {
-          const perMonth = value / tektraDuration;
-          if (month === start + Math.ceil(tektraDuration) - 1) {
-            tektra += value - (perMonth * (Math.ceil(tektraDuration) - 1));
-          } else {
-            tektra += perMonth;
-          }
-        }
-      }
-      cumulativeStick += stickBuilt;
-      if (month <= lastTektraMonth) {
-        cumulativeTektra += tektra;
-      }
-      // Capture head start value and the month it occurs
-      if (month === lastTektraMonth) {
-        headStartValue = cumulativeTektra - cumulativeStick;
-        headStartMonth = month;
-      }
-      let opportunity = 0;
-      // If TEKTRA finishes before stick built, show head start value as the stick built revenue for the remaining months
-      if (month > lastTektraMonth && month <= maxMonths && headStartValue > 0) {
-        // Opportunity is the stick built revenue for this month (potential new project revenue)
-        opportunity = stickBuilt;
-      }
-      // Show the original head start value in the first month after TEKTRA finishes if there are no more stick built months
-      if (month === lastTektraMonth + 1 && maxMonths <= lastTektraMonth && headStartValue > 0) {
-        opportunity = headStartValue;
-      }
-      chartData.push({
-        month,
-        stickBuilt,
-        tektra,
-        opportunity
-      });
-    }
-    return chartData;
-  }
-
-  function calculateSavings(data: SavingsData) {
-    const totalSqFt = data.projects.reduce((sum, project) => sum + (project.projectSqFt || 0), 0);
-
-    // Primary Construction Costs
-    const primaryConstructionTotal = totalSqFt > 0 && data.primaryCostElements
-      ? data.primaryCostElements.reduce((sum: number, element: { rate: number }) => sum + (element.rate * totalSqFt), 0)
-      : 0;
-
-      // Division 1 Costs
-      const division1DailyCosts = division1CostCategories.reduce((sum, category) => {
-        const cost = Number(data[category.key as keyof SavingsData]) || 0;
-        return sum + cost;
-      }, 0);
-
-      const division1DailyCostsWithFees = division1DailyCosts > 0
-        ? division1DailyCosts + (division1DailyCosts * (data.gcDeveloperFeePercent / 100)) + (division1DailyCosts * (data.generalLiabilityInsurancePercent / 100))
-        : 0;
-
-      const division1TraditionalCost = division1DailyCostsWithFees * (data.workdaysSaved || 0);
-
-    // Client GC Fee
-    const clientGcFee = primaryConstructionTotal > 0
-      ? (primaryConstructionTotal + division1TraditionalCost) * (data.gcFeePercent / 100)
-      : 0;
-
-    // Total Costs
-    const traditionalTotalCost = primaryConstructionTotal + division1TraditionalCost + clientGcFee;
-    const tektraTotalCost = totalSqFt > 0 ? (88 * totalSqFt) : 0;
-
-    // Total Savings
-    const totalSavings = traditionalTotalCost - tektraTotalCost;
-
-    console.log('Total Square Footage:', totalSqFt);
-    console.log('Primary Construction Total:', primaryConstructionTotal);
-    console.log('Division 1 Traditional Cost:', division1TraditionalCost);
-    console.log('Client GC Fee:', clientGcFee);
-    console.log('Traditional Total Cost:', traditionalTotalCost);
+  // Computations (financials) — focus on two revenue paths
+  const calc = useMemo(() => {
+    const developmentSalesRevenue = projectSqft * avgSalePerSqft; // Path 2
+    const constructionRevenue = projectSqft * panelCost;          // Path 1 (TEKTRA contract)
+    const onsiteCost = projectSqft * tradCost;                     // For ROI / savings context
+    const savings = onsiteCost - constructionRevenue;
+    const marginAtTarget = developmentSalesRevenue * (marginTargetPct / 100);
+    const roi = savings / (constructionRevenue || 1);
 
     return {
-      totalSavings: totalSavings > 0 ? totalSavings : 0, // Ensure no negative savings
-      savingsPerSqFt: totalSqFt > 0 ? (traditionalTotalCost / totalSqFt) - (tektraTotalCost / totalSqFt) : 0,
-      roiPercent: tektraTotalCost > 0 ? ((totalSavings * (data.projectsPerYear || 1)) / tektraTotalCost) * 100 : 0,
-      traditionalTotalCost,
-      tektraTotalCost,
+      developmentSalesRevenue,
+      constructionRevenue,
+      onsiteCost,
+      savings,
+      marginAtTarget,
+      roi,
     };
-  }
+  }, [projectSqft, avgSalePerSqft, panelCost, tradCost, marginTargetPct]);
 
-  function getProfitChartData(projects: ProjectData[], gcFeePercent: number) {
-    // Calculate the maximum duration in months for all projects (stick built)
-    let maxMonths = Math.max(
-      ...projects.map(p => Number(p.projectDuration) || 0)
-    );
-    if (!maxMonths) return [];
+  // Computations (phasing timelines)
+  const phasing = useMemo(() => {
+    const start = new Date(startDate);
+    let lastTektraEnd = addMonths(start, 0);
 
-    let chartData: { month: number; stickBuiltProfit: number; tektraProfit: number; additionalProfit: number }[] = [];
+    const phasesArr = Array.from({ length: phases }, (_, i) => {
+      const phaseIdx = i + 1;
 
-    for (let month = 1; month <= maxMonths; month++) {
-      let stickBuiltProfit = 0;
-      let tektraProfit = 0;
-      projects.forEach(project => {
-        const durationMonths = Number(project.projectDuration) || 0;
-        const daysSaved = Number(project.daysSaved) || 0;
-        // Work days per month ~21.67
-        const monthsSaved = daysSaved / 21.67;
-        const tektraDurationMonths = Math.max(durationMonths - monthsSaved, 1);
-        const totalRevenue = Number(project.estimatedDevelopmentValue) || 0;
-        const feeRate = gcFeePercent / 100;
+      // Stick (phase-locked)
+      const stickStart = addMonths(start, i * phaseSpacingMonths);
+      const stickEnd = addMonths(stickStart, stickMonthsPerPhase);
 
-        // Stick Built: profit (fee) recognized linearly over original duration
-        if (month <= durationMonths && durationMonths > 0) {
-          stickBuiltProfit += (totalRevenue * feeRate) / durationMonths;
-        }
-        // TEKTRA: profit (fee) recognized linearly over shortened duration
-        if (month <= tektraDurationMonths && tektraDurationMonths > 0) {
-          tektraProfit += (totalRevenue * feeRate) / tektraDurationMonths;
-        }
-      });
-      chartData.push({
-        month,
-        stickBuiltProfit,
-        tektraProfit,
-        additionalProfit: tektraProfit - stickBuiltProfit
-      });
-    }
+      // TEKTRA: planned start, optionally pull-forward if JIT
+      const plannedTektraStart = addMonths(start, i * phaseSpacingMonths);
+      const tektraStart =
+        i === 0
+          ? plannedTektraStart
+          : (tektraJit
+              ? new Date(Math.min(plannedTektraStart.getTime(), lastTektraEnd.getTime()))
+              : plannedTektraStart);
+      const tektraEnd = addMonths(tektraStart, tektraMonthsPerPhase);
+      lastTektraEnd = tektraEnd;
 
-    return chartData;
-  }
-
-  const handleInputChange = (field: keyof SavingsData, value: string | number) => {
-    setSavingsData(prev => {
-      const updatedData = {
-        ...prev,
-        [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value
-      };
-
-      // Automatically update projectsPerYear based on the count of projects
-      if (field === 'projects') {
-        updatedData.projectsPerYear = updatedData.projects.length;
-      }
-
-      return updatedData;
-    });
-  };
-
-  const handleProjectChange = (projectId: string, field: keyof ProjectData, value: string | number) => {
-    setSavingsData(prev => ({
-      ...prev,
-      projects: prev.projects.map((project, idx) =>
-        project.id === projectId
-          ? {
-            ...project,
-            [field]: typeof value === 'string' ? (isNaN(Number(value)) ? value : Number(value)) : value,
-            estimatedDevelopmentValue:
-              (field === 'developmentCostPerSqFt' || field === 'projectSqFt')
-                ? (field === 'developmentCostPerSqFt'
-                    ? (project.projectSqFt || 0) * Number(value)
-                    : (Number(value) || 0) * (project.developmentCostPerSqFt || 0))
-                : project.estimatedDevelopmentValue
-          }
-        : project
-      )
-    }));
-  };
-
-  const addProject = () => {
-    setSavingsData(prev => {
-      const newProject: ProjectData = {
-        id: Date.now().toString(),
-        projectName: '',
-        projectAddress: '',
-        projectSqFt: 3000, // Default: 3000 sqft
-        estimateDate: '',
-        daysSaved: '21.67',   // Default: 21.67 work days saved
-        projectDuration: 12, // Default: 12 months
-        developmentCostPerSqFt: 650, // Default: $650 per sqft
-        estimatedDevelopmentValue: 3000 * 650, // Default calculated value
-        phase: 1 // Default to phase 1, do not auto-increment
-    };
       return {
-        ...prev,
-        projects: [...prev.projects, newProject]
+        phase: phaseIdx,
+        homes: homesPerPhase,
+        stickStart,
+        stickEnd,
+        tektraStart,
+        tektraEnd,
+        stickOffsetWk: weeksBetween(start, stickStart),
+        tektraOffsetWk: weeksBetween(start, tektraStart),
+        stickDurationWk: weeksBetween(stickStart, stickEnd),
+        tektraDurationWk: weeksBetween(tektraStart, tektraEnd),
       };
     });
-  };
 
-  const removeProject = (projectId: string) => {
-    setSavingsData(prev => ({
-      ...prev,
-      projects: prev.projects.filter(project => project.id !== projectId)
-    }));
-  };
+    const stickProjectEnd = phasesArr.reduce((d, p) => (p.stickEnd > d ? p.stickEnd : d), start);
+    const tektraProjectEnd = phasesArr.reduce((d, p) => (p.tektraEnd > d ? p.tektraEnd : d), start);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
+    return { phasesArr, stickProjectEnd, tektraProjectEnd };
+  }, [
+    startDate,
+    phases,
+    phaseSpacingMonths,
+    stickMonthsPerPhase,
+    tektraMonthsPerPhase,
+    homesPerPhase,
+    tektraJit, // dependency so toggle recomputes
+  ]);
 
-  const formatPercent = (percent: number) => {
-    return `${percent.toFixed(1)}%`;
-  };
+  // Derived: time saved across the whole plan
+  const projectWeeksSaved = Math.max(0, weeksBetween(phasing.tektraProjectEnd, phasing.stickProjectEnd));
+  const projectMonthsStick = Math.max(1, monthsBetween(new Date(startDate), phasing.stickProjectEnd));
+  const projectMonthsTektra = Math.max(1, monthsBetween(new Date(startDate), phasing.tektraProjectEnd));
 
-  const revenueChartData = getRevenueChartData(savingsData.projects);
-  const profitChartData = getProfitChartData(savingsData.projects, savingsData.gcFeePercent);
-  const cumulativeRevenueChartData = getCumulativeRevenueChartData(savingsData.projects, savingsData.gcFeePercent);
+  // Cashflow view: monthly recognition (simple even spread over project duration)
+  const cashflowData = useMemo(() => {
+    const months = Math.max(projectMonthsStick, projectMonthsTektra);
+    const devPerMonthStick = calc.developmentSalesRevenue / projectMonthsStick;
+    const devPerMonthTektra = calc.developmentSalesRevenue / projectMonthsTektra;
+    const constructionPerMonthTektra = calc.constructionRevenue / projectMonthsTektra;
 
-  /**
-   * To illustrate the opportunity cost and real value of quicker revenue/project recognition:
-   * 1. Show cumulative revenue over time for both Stick Built and TEKTRA.
-   * 2. The area between the two curves (or the difference at each month) represents the opportunity cost benefit.
-   * 3. You can add a cumulative revenue chart and/or a chart of the difference (delta) per month.
-   */
-
-  // Helper to get cumulative revenue data and cumulative opportunity value
-  function getCumulativeRevenueChartData(projects: ProjectData[], gcFeePercent: number) {
-    const sorted = getProjectsByPhase(projects);
-    const startMonths = getProjectStartMonths(sorted);
-    const tektraStartMonths = getTektraProjectStartMonths(sorted);
-
-    let maxMonths = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const endMonth = (startMonths[i] || 1) + duration - 1;
-      if (endMonth > maxMonths) maxMonths = endMonth;
-    }
-    let maxTektraMonths = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const duration = Number(sorted[i].projectDuration) || 0;
-      const daysSaved = Number(sorted[i].daysSaved) || 0;
-      const monthsSaved = daysSaved / 21.67;
-      const tektraDuration = Math.max(duration - monthsSaved, 1);
-      const endMonth = (tektraStartMonths[i] || 1) + Math.ceil(tektraDuration) - 1;
-      if (endMonth > maxTektraMonths) maxTektraMonths = endMonth;
-    }
-    const lastTektraMonth = maxTektraMonths;
-    if (!maxMonths && !maxTektraMonths) return [];
-
-    let chartData: { 
-      month: number; 
-      stickBuilt: number; 
-      tektra: number; 
-      delta: number; 
-      cumulativeOpportunity: number;
-      stickBuiltProfit: number;
-      tektraProfit: number;
-    }[] = [];
-    let cumulativeStick = 0, cumulativeTektra = 0, cumulativeOpportunity = 0;
-    let cumulativeStickProfit = 0, cumulativeTektraProfit = 0;
-    let headStartValue = 0;
-
-    for (let month = 1; month <= Math.max(maxMonths, maxTektraMonths); month++) {
-      let stickBuilt = 0;
-      let tektra = 0;
-      let stickBuiltProfit = 0;
-      let tektraProfit = 0;
-      for (let i = 0; i < sorted.length; i++) {
-        const duration = Number(sorted[i].projectDuration) || 0;
-        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
-        const feeRate = gcFeePercent / 100;
-        const start = startMonths[i];
-        if (month >= start && month < start + duration && duration > 0) {
-          stickBuilt += value / duration;
-          stickBuiltProfit += (value * feeRate) / duration;
-        }
-      }
-      for (let i = 0; i < sorted.length; i++) {
-        const duration = Number(sorted[i].projectDuration) || 0;
-        const daysSaved = Number(sorted[i].daysSaved) || 0;
-        const monthsSaved = daysSaved / 21.67;
-        const tektraDuration = Math.max(duration - monthsSaved, 1);
-        const value = Number(sorted[i].estimatedDevelopmentValue) || 0;
-        const feeRate = gcFeePercent / 100;
-        const start = tektraStartMonths[i];
-        if (tektraDuration > 0 && month >= start && month < start + Math.ceil(tektraDuration)) {
-          const perMonth = value / tektraDuration;
-          const perMonthProfit = (value * feeRate) / tektraDuration;
-          if (month === start + Math.ceil(tektraDuration) - 1) {
-            tektra += value - (perMonth * (Math.ceil(tektraDuration) - 1));
-            tektraProfit += (value * feeRate) - (perMonthProfit * (Math.ceil(tektraDuration) - 1));
-          } else {
-            tektra += perMonth;
-            tektraProfit += perMonthProfit;
-          }
-        }
-      }
-      cumulativeStick += stickBuilt;
-      cumulativeTektra += tektra;
-      cumulativeStickProfit += stickBuiltProfit;
-      cumulativeTektraProfit += tektraProfit;
-      if (month === lastTektraMonth) {
-        headStartValue = cumulativeTektra - cumulativeStick;
-      }
-      const delta = cumulativeTektra - cumulativeStick;
-      cumulativeOpportunity = Math.max(cumulativeOpportunity, delta);
-      chartData.push({
-        month,
-        stickBuilt: cumulativeStick,
-        tektra: cumulativeTektra,
-        delta,
-        cumulativeOpportunity,
-        stickBuiltProfit: cumulativeStickProfit,
-        tektraProfit: cumulativeTektraProfit,
-      });
-    }
-    return chartData;
-  }
-
-  // Helper to summarize data per year
-  function getYearlySummary(data: typeof cumulativeRevenueChartData) {
-    const years: {
-      year: number;
-      stickBuilt: number;
-      tektra: number;
-      stickBuiltProfit: number;
-      tektraProfit: number;
-      opportunity: number;
-    }[] = [];
-    let currentYear = 1;
-    let yearData = {
-      stickBuilt: 0,
-      tektra: 0,
-      stickBuiltProfit: 0,
-      tektraProfit: 0,
-      opportunity: 0,
-    };
-    data.forEach((row, idx) => {
-      yearData.stickBuilt += row.stickBuilt - (data[idx - 1]?.stickBuilt || 0);
-      yearData.tektra += row.tektra - (data[idx - 1]?.tektra || 0);
-      yearData.stickBuiltProfit += row.stickBuiltProfit - (data[idx - 1]?.stickBuiltProfit || 0);
-      yearData.tektraProfit += row.tektraProfit - (data[idx - 1]?.tektraProfit || 0);
-      yearData.opportunity += row.cumulativeOpportunity - (data[idx - 1]?.cumulativeOpportunity || 0);
-
-      if ((row.month % 12 === 0) || idx === data.length - 1) {
-        years.push({
-          year: currentYear,
-          ...yearData,
-        });
-        currentYear++;
-        yearData = {
-          stickBuilt: 0,
-          tektra: 0,
-          stickBuiltProfit: 0,
-          tektraProfit: 0,
-          opportunity: 0,
-        };
-      }
+    return Array.from({ length: months }, (_, i) => {
+      const m = i + 1;
+      return {
+        month: m,
+        stickDev: m <= projectMonthsStick ? devPerMonthStick : 0,
+        tektraDev: m <= projectMonthsTektra ? devPerMonthTektra : 0,
+        tektraConst: m <= projectMonthsTektra ? constructionPerMonthTektra : 0,
+      };
     });
-    return years;
-  }
+  }, [calc.developmentSalesRevenue, calc.constructionRevenue, projectMonthsStick, projectMonthsTektra]);
 
-  const yearlySummary = getYearlySummary(cumulativeRevenueChartData);
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (liveRegionRef.current) {
+      liveRegionRef.current.textContent = `Updated: development sales ${currency(
+        calc.developmentSalesRevenue
+      )}, construction revenue ${currency(calc.constructionRevenue)}, time saved ${projectWeeksSaved} weeks.`;
+    }
+  }, [calc, projectWeeksSaved]);
+
+  // Build stacked-bar data for Gantt‑like schedule visualization (in weeks)
+  const timelineData = useMemo(() => {
+    return phasing.phasesArr.map((p) => ({
+      phase: `P${p.phase}`,
+      stickOffset: p.stickOffsetWk,
+      stickDuration: p.stickDurationWk,
+      tektraOffset: p.tektraOffsetWk,
+      tektraDuration: p.tektraDurationWk,
+      stickLabel: `${toISO(p.stickStart)} → ${toISO(p.stickEnd)}`,
+      tektraLabel: `${toISO(p.tektraStart)} → ${toISO(p.tektraEnd)}`,
+    }));
+  }, [phasing]);
+
+  const totalHomesPlanned = phases * homesPerPhase;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex flex-col items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2 text-center">
-            TEKTRA Savings Calculator
-          </h1>
-          <p className="text-sm text-gray-600 text-center">
-            Precision Construction Cost Analysis & ROI Projections
-          </p>
-        </div>
+    <main role="main" className="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-black focus:px-3 focus:py-2 focus:text-white"
+      >
+        Skip to content
+      </a>
 
-        {/* Hero Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg border border-blue-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
-            <span className="text-blue-700 text-base font-semibold mb-4">Total Savings</span>
-            <span className="text-4xl font-bold text-blue-800">
-              {formatCurrency(calculations.totalSavings || 0)}
-            </span>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 shadow-lg border border-green-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
-            <span className="text-green-700 text-base font-semibold mb-4">Savings Per Sq Ft</span>
-            <span className="text-4xl font-bold text-green-800">
-              {formatCurrency(calculations.savingsPerSqFt || 0)}
-            </span>
-          </div>
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 shadow-lg border border-yellow-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300">
-            <span className="text-yellow-700 text-base font-semibold mb-4">Annual ROI</span>
-            <span className="text-4xl font-bold text-yellow-800">
-              {formatPercent(calculations.roiPercent || 0)}
-            </span>
-          </div>
-        </div>
-
-        {/* Project Details Section */}
-        <div className="bg-white shadow-md rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-medium text-slate-800 mb-4">Project Details</h2>
-          <div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Client Name</label>
-              <input
-                type="text"
-                value={savingsData.client}
-                onChange={(e) => handleInputChange('client', e.target.value)}
-                className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:ring-0"
-                placeholder="Enter client name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">GC and Developer Fee %</label>
-              <input
-                type="number"
-                value={savingsData.gcFeePercent || ''}
-                onChange={(e) => handleInputChange('gcFeePercent', e.target.value)}
-                className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:ring-0"
-                placeholder="Enter fee percentage"
-                min="0"
-                max="100"
-              />
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-slate-200 rounded">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">#</th> {/* Line number column */}
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Phase</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Project Name</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Address</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Sq Ft</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Dev Cost/SqFt</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Est. Value</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Work Days Saved</th>
-                  <th className="px-2 py-2 text-xs font-semibold text-slate-600">Duration (Months)</th>
-                  <th className="px-2 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {getProjectsByPhase(savingsData.projects).map((project, index) => (
-                  <tr key={project.id} className="border-t border-slate-100">
-                    <td className="px-2 py-2 text-xs text-slate-500 text-center">{index + 1}</td> {/* Line number */}
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={project.phase || index + 1}
-                        min={1}
-                        onChange={e => handleProjectChange(project.id, 'phase', e.target.value)}
-                        className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
-                        placeholder="Phase"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="text"
-                        value={project.projectName}
-                        onChange={(e) => handleProjectChange(project.id, 'projectName', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs focus:border-blue-500 focus:ring-0"
-                        placeholder="Project Name"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="text"
-                        value={project.projectAddress}
-                        onChange={(e) => handleProjectChange(project.id, 'projectAddress', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs focus:border-blue-500 focus:ring-0"
-                        placeholder="Address"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={project.projectSqFt || ''}
-                        onChange={(e) => handleProjectChange(project.id, 'projectSqFt', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
-                        placeholder="Sq Ft"
-                        min="0"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="text"
-                        value={formatCurrency(project.developmentCostPerSqFt || 0)}
-                        onChange={(e) => {
-                          const rawValue = e.target.value.replace(/[^0-9.]/g, '');
-                          handleProjectChange(project.id, 'developmentCostPerSqFt', rawValue);
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
-                        placeholder="Cost/SqFt"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className="block w-full px-2 py-1 text-xs text-slate-700 bg-transparent rounded">
-                        {formatCurrency(project.estimatedDevelopmentValue || 0)}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={project.daysSaved || ''}
-                        onChange={(e) => handleProjectChange(project.id, 'daysSaved', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
-                        placeholder="Days Saved"
-                        min="0"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={project.projectDuration || ''}
-                        onChange={(e) => handleProjectChange(project.id, 'projectDuration', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:border-blue-500 focus:ring-0"
-                        placeholder="Months"
-                        min="0"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      {savingsData.projects.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeProject(project.id)}
-                          className="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded"
-                          title="Remove Project"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {/* Total Row */}
-                <tr className="bg-slate-100 font-semibold">
-                  <td className="px-2 py-2 text-xs text-slate-700 text-center" colSpan={1}>
-                    {savingsData.projects.length} {/* Total number of projects */}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right" colSpan={2}>Total</td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
-                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.projectSqFt) || 0), 0).toLocaleString()}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
-                    {/* Weighted average Dev Cost/SqFt */}
-                    {(() => {
-                      const totalSqFt = savingsData.projects.reduce((sum, p) => sum + (Number(p.projectSqFt) || 0), 0);
-                      const totalDevCost = savingsData.projects.reduce((sum, p) => sum + ((Number(p.developmentCostPerSqFt) || 0) * (Number(p.projectSqFt) || 0)), 0);
-                      if (totalSqFt === 0) return '$0';
-                      return formatCurrency(totalDevCost / totalSqFt);
-                    })()}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
-                    {formatCurrency(savingsData.projects.reduce((sum, p) => sum + (Number(p.estimatedDevelopmentValue) || 0), 0))}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
-                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.daysSaved) || 0), 0)}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-700 text-right">
-                    {savingsData.projects.reduce((sum, p) => sum + (Number(p.projectDuration) || 0), 0)}
-                  </td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={addProject}
-              className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition"
-            >
-              Add Project
-            </button>
-          </div>
-        </div>
-
-        {/* Revenue Recognition Chart */}
-        <div className="bg-white shadow-md rounded-lg p-6 mt-8">
-          <h2 className="text-lg font-medium text-slate-800 mb-4">Monthly Revenue Opportunity Comparison</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={revenueChartData}>
-              <XAxis dataKey="month" label={{ value: 'Month', position: 'insideBottomRight', offset: -5 }} />
-              <YAxis 
-                label={{ value: 'Monthly Revenue', angle: -90, position: 'insideLeft' }} 
-                tickFormatter={(value: number) => {
-                  if (value >= 1_000_000) return `$${(value/1_000_000).toFixed(1)}M`;
-                  if (value >= 1_000) return `$${(value/1_000).toFixed(1)}K`;
-                  return `$${value}`;
-                }}
-                width={80}
-              />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
-              <Legend />
-              <Bar dataKey="stickBuilt" fill="#f87171" name="Stick Built (Monthly)" />
-              <Bar dataKey="tektra" fill="#34d399" name="TEKTRA (Monthly)" />
-              <Bar dataKey="opportunity" fill="#fbbf24" name="Head Start Value (TEKTRA)" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Cumulative Revenue Opportunity Cost Chart + Yearly Summary Table */}
-        <div className="bg-white shadow-md rounded-lg p-6 mt-8">
-          <h2 className="text-lg font-medium text-slate-800 mb-4">
-            Cumulative Revenue Recognition & Opportunity Cost
-          </h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={cumulativeRevenueChartData}>
-              <XAxis dataKey="month" label={{ value: 'Month', position: 'insideBottomRight', offset: -5 }} />
-              <YAxis
-                label={{ value: 'Cumulative Revenue', angle: -90, position: 'insideLeft' }}
-                tickFormatter={(value: number) => {
-                  if (value >= 1_000_000) return `$${(value/1_000_000).toFixed(1)}M`;
-                  if (value >= 1_000) return `$${(value/1_000).toFixed(1)}K`;
-                  return `$${value}`;
-                }}
-                width={80}
-              />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
-              <Legend />
-              <Line type="monotone" dataKey="stickBuilt" stroke="#f87171" name="Stick Built (Cumulative)" strokeWidth={2} />
-              <Line type="monotone" dataKey="tektra" stroke="#34d399" name="TEKTRA (Cumulative)" strokeWidth={2} />
-              <Line type="monotone" dataKey="cumulativeOpportunity" stroke="#fbbf24" name="Cumulative Opportunity Value" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="stickBuiltProfit" stroke="#6366f1" name="Stick Built Profit" strokeDasharray="5 5" strokeWidth={2} />
-              <Line type="monotone" dataKey="tektraProfit" stroke="#06b6d4" name="TEKTRA Profit" strokeDasharray="5 5" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="text-xs text-slate-500 mt-2 mb-6">
-            The yellow line shows the cumulative opportunity value realized by recognizing revenue sooner with TEKTRA.
-          </div>
-          {/* Yearly Summary Table */}
+      {/* Hero */}
+      <section aria-label="TEKTRA value proposition" className="relative overflow-hidden border-b bg-white">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-10 md:grid-cols-2 md:py-16">
           <div>
-            <h3 className="text-base font-medium text-slate-800 mb-2">Yearly Revenue & Profit Summary</h3>
-            <table className="min-w-full border border-slate-200 rounded text-xs">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="px-2 py-2 font-semibold text-slate-600">Year</th>
-                  <th className="px-2 py-2 font-semibold text-slate-600">Stick Built Revenue</th>
-                  <th className="px-2 py-2 font-semibold text-slate-600">TEKTRA Revenue</th>
-                  <th className="px-2 py-2 font-semibold text-slate-600">Stick Built Profit</th>
-                  <th className="px-2 py-2 font-semibold text-slate-600">TEKTRA Profit</th>
-                  <th className="px-2 py-2 font-semibold text-slate-600">Opportunity Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {yearlySummary.map((row) => (
-                  <tr key={row.year} className="border-t border-slate-100">
-                    <td className="px-2 py-2 text-center">{row.year}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(row.stickBuilt)}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(row.tektra)}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(row.stickBuiltProfit)}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(row.tektraProfit)}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(row.opportunity)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Badge variant="secondary" className="mb-3 inline-flex items-center gap-2 rounded-full px-3 py-1">
+              <Factory className="h-4 w-4" aria-hidden /> Off‑Site • Panelized • Precisely Built
+            </Badge>
+            <h1 className="text-balance text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+              Faster Schedules, Tighter Budgets, Higher Quality.
+            </h1>
+            <p className="mt-3 max-w-prose text-lg text-slate-600">
+              Show your investors, lenders, and city stakeholders how TEKTRA’s off‑site
+              model reduces risk and unlocks margin on day one — with transparent math.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button size="lg" className="rounded-2xl">
+                <FileCheck2 className="mr-2 h-5 w-5" aria-hidden /> Generate Pro Forma
+              </Button>
+              <Button variant="outline" size="lg" className="rounded-2xl">
+                <BarChart3 className="mr-2 h-5 w-5" aria-hidden /> Download Summary PDF
+              </Button>
+            </div>
+          </div>
+          <motion.div
+            initial={prefersReducedMotion ? undefined : { opacity: 0, y: 20 }}
+            animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="grid grid-cols-2 gap-4"
+          >
+            <KpiCard title="Development Sales" icon={DollarSign} value={currency(calc.developmentSalesRevenue)} sub="Total potential" />
+            <KpiCard title="Construction Revenue" icon={PiggyBank} value={currency(calc.constructionRevenue)} sub="TEKTRA contract" />
+            <KpiCard title="Time Saved" icon={CalendarClock} value={`${projectWeeksSaved} wk`} sub="Project-wide vs. stick" />
+            <KpiCard title="ROI vs On‑site" icon={Gauge} value={`${(calc.roi * 100).toFixed(0)}%`} sub="From cost delta" />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Live region for screen readers */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRegionRef} />
+
+      {/* Content */}
+      <section id="content" className="mx-auto max-w-7xl px-4 py-10">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Left column: inputs */}
+          <Card className="lg:col-span-1">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Building2 className="h-5 w-5" aria-hidden /> Project Setup
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3">
+                <Label htmlFor="project-name">Project name</Label>
+                <Input id="project-name" value={projectName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProjectName(e.target.value)} placeholder="e.g., Aspen Villas" />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="developer">Developer</Label>
+                <Input id="developer" value={developer} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeveloper(e.target.value)} placeholder="Your company" />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="lead-name">Lead / Client</Label>
+                <Input id="lead-name" value={leadName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLeadName(e.target.value)} placeholder="e.g., Gary Johnson" />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="market">Market</Label>
+                <Input id="market" value={market} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMarket(e.target.value)} placeholder="Region / city" />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="start-date">Project start date</Label>
+                <Input id="start-date" type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="close-date">Projected closing date</Label>
+                <Input id="close-date" type="date" value={closingDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setClosingDate(e.target.value)} />
+              </div>
+
+              <div className="grid gap-3">
+                <Label htmlFor="unit">Units</Label>
+                <Select value={unit} onValueChange={(v: any) => setUnit(v)}>
+                  <SelectTrigger id="unit" aria-label="Select units">
+                    <SelectValue placeholder="Select units" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Measurement</SelectLabel>
+                      <SelectItem value="imperial">Imperial (ft²)</SelectItem>
+                      <SelectItem value="metric">Metric (m²)</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-3">
+                <Label htmlFor="sqft">Buildable area ({unit === "imperial" ? "ft²" : "m²"})</Label>
+                <Input id="sqft" inputMode="numeric" value={projectSqft} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProjectSqft(Number(e.target.value || 0))} />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="rev">Average sale price / {unit === "imperial" ? "ft²" : "m²"}</Label>
+                <Input id="rev" inputMode="decimal" value={avgSalePerSqft} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAvgSalePerSqft(Number(e.target.value || 0))} />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="panel">TEKTRA cost / {unit === "imperial" ? "ft²" : "m²"}</Label>
+                <Input id="panel" inputMode="decimal" value={panelCost} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPanelCost(Number(e.target.value || 0))} />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="trad">Traditional cost / {unit === "imperial" ? "ft²" : "m²"}</Label>
+                <Input id="trad" inputMode="decimal" value={tradCost} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTradCost(Number(e.target.value || 0))} />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="margin">Target gross margin %</Label>
+                <Input id="margin" inputMode="decimal" value={marginTargetPct} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMarginTargetPct(Number(e.target.value || 0))} />
+              </div>
+
+              <Button className="w-full rounded-2xl" variant="secondary">
+                <FileCheck2 className="mr-2 h-5 w-5" aria-hidden /> Save Scenario
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Right column: results */}
+          <div className="space-y-6 lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between gap-2">
+                  <span className="text-xl">Business Outcomes</span>
+                  <Badge variant="outline" className="rounded-xl">
+                    {projectName} • {developer}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>Development Sales (total)</span>
+                    <span className="font-medium text-slate-900">{currency(calc.developmentSalesRevenue)}</span>
+                  </div>
+                  <Progress value={100} aria-label="Development sales" />
+
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>Construction Revenue (TEKTRA)</span>
+                    <span className="font-medium text-slate-900">{currency(calc.constructionRevenue)}</span>
+                  </div>
+                  <Progress value={Math.min(100, (calc.constructionRevenue / calc.developmentSalesRevenue) * 100)} aria-label="Construction share" />
+
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>Savings vs On‑site</span>
+                    <span className="font-semibold text-emerald-700">{currency(calc.savings)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <MiniStat label="Target Margin" value={`${DEFAULTS.marginTargetPct}%`} icon={TrendingUp} />
+                  <MiniStat label="ROI vs On‑site" value={`${(calc.roi * 100).toFixed(0)}%`} icon={Gauge} />
+                  <MiniStat label="Start" value={startDate} icon={CalendarClock} />
+                  <MiniStat label="Closing" value={closingDate} icon={CalendarClock} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Tabs defaultValue="cashflow" className="w-full">
+              <TabsList aria-label="Charts">
+                <TabsTrigger value="cashflow">Cashflow</TabsTrigger>
+                <TabsTrigger value="phasing">Stick vs TEKTRA (Phases)</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="cashflow">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Monthly Revenue Recognition</CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={cashflowData} margin={{ left: 10, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" label={{ value: "Month", position: "insideRight", offset: -5 }} />
+                        <YAxis
+                          tickFormatter={(v) =>
+                            v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${(v / 1_000).toFixed(0)}K`
+                          }
+                        />
+                        <Tooltip
+                          formatter={(v: number, name: string) =>
+                            v >= 1_000_000 ? [`$${(v / 1_000_000).toFixed(2)}M`, name] : [`$${(v / 1_000).toFixed(0)}K`, name]
+                          }
+                        />
+                        <Legend />
+                        <Bar dataKey="stickDev" name="Dev Sales (Stick)" fill="#ef4444" />
+                        <Bar dataKey="tektraDev" name="Dev Sales (TEKTRA)" fill="#10b981" />
+                        <Line type="monotone" dataKey="tektraConst" name="Construction (TEKTRA)" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                    <div className="mt-3 text-xs text-slate-600">
+                      TEKTRA recognizes development sales earlier by compressing the build schedule, while construction
+                      revenue is recognized during the shortened TEKTRA timeline.
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Phasing tab remains as in your current file */}
+              <TabsContent value="phasing">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" aria-hidden /> Multi‑phase Plan — Stick vs TEKTRA</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label htmlFor="total-homes">Total homes</Label>
+                        <Input id="total-homes" inputMode="numeric" value={totalHomes} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTotalHomes(Number(e.target.value || 0))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="phases">Phases</Label>
+                        <Input id="phases" inputMode="numeric" value={phases} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhases(Number(e.target.value || 0))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="homes-per-phase">Homes per phase</Label>
+                        <Input id="homes-per-phase" inputMode="numeric" value={homesPerPhase} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHomesPerPhase(Number(e.target.value || 0))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="phase-spacing">Start a new phase every (months)</Label>
+                        <Input id="phase-spacing" inputMode="numeric" value={phaseSpacingMonths} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhaseSpacingMonths(Number(e.target.value || 0))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="stick-months">Stick‑built duration / phase (months)</Label>
+                        <Input id="stick-months" inputMode="numeric" value={stickMonthsPerPhase} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStickMonthsPerPhase(Number(e.target.value || 0))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="tektra-months">TEKTRA duration / phase (months)</Label>
+                        <Input id="tektra-months" inputMode="numeric" value={tektraMonthsPerPhase} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTektraMonthsPerPhase(Number(e.target.value || 0))} />
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border bg-white p-4 text-sm text-slate-700">
+                      <div className="flex flex-wrap gap-4">
+                        <div><strong>Stick finish:</strong> {toISO(phasing.stickProjectEnd)}</div>
+                        <div><strong>TEKTRA finish:</strong> {toISO(phasing.tektraProjectEnd)}</div>
+                        <div><strong>Total homes planned:</strong> {totalHomesPlanned}</div>
+                      </div>
+                    </div>
+
+                    {/* Phasing chart (fix tooltip + improve colors) */}
+                    <div className="h-80 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={timelineData} margin={{ left: 10, right: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="phase" />
+                          <YAxis label={{ value: "Weeks from project start", angle: -90, position: "insideLeft" }} />
+                          <Tooltip
+                            formatter={(value: any, name: any, ctx: any) => {
+                              if (name === "TEKTRA duration") return [`${value} wk`, ctx?.payload?.tektraLabel];
+                              if (name === "Stick duration") return [`${value} wk`, ctx?.payload?.stickLabel];
+                              return [value, name];
+                            }}
+                            contentStyle={{ fontSize: 12 }}
+                          />
+                          {/* Invisible offsets to create Gantt stacking */}
+                          <Bar dataKey="stickOffset" stackId="stick" fill="rgba(0,0,0,0)" name="_offset" />
+                          <Bar dataKey="stickDuration" stackId="stick" name="Stick duration" fill="#ef4444" />
+                          <Bar dataKey="tektraOffset" stackId="tektra" fill="rgba(0,0,0,0)" name="_offset" />
+                          <Bar dataKey="tektraDuration" stackId="tektra" name="TEKTRA duration" fill="#10b981" />
+                          <Legend />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {phasing.phasesArr.map((p) => (
+                        <div key={p.phase} className="rounded-xl border bg-white p-4">
+                          <div className="mb-1 text-sm font-semibold">Phase {p.phase} • {p.homes} homes</div>
+                          <div className="text-xs text-slate-600">Stick: {toISO(p.stickStart)} → {toISO(p.stickEnd)}</div>
+                          <div className="text-xs text-slate-600">TEKTRA: {toISO(p.tektraStart)} → {toISO(p.tektraEnd)}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm text-slate-600">Give your client transparency and control—adjust variables and export a polished comparison.</div>
+                      <div className="flex gap-3">
+                        <Button size="lg" className="rounded-2xl"><Wand2 className="mr-2 h-5 w-5" aria-hidden /> Generate Client PDF</Button>
+                        <Button size="lg" variant="outline" className="rounded-2xl">Export CSV</Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {/* Credibility / Proof points */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Why Developers Choose TEKTRA</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-3">
+                <ProofPoint title="Bankable Schedules" body="Parallel path factory production shaves weeks off your critical path with predictable deliveries." />
+                <ProofPoint title="Cost Certainty" body="Guaranteed line‑item pricing per panel and transparent BOMs reduce scope creep and surprises." />
+                <ProofPoint title="Quality at Scale" body="Enclosed plant environment, jigs, and QA checks deliver straighter walls, tighter envelopes, fewer call‑backs." />
+              </CardContent>
+            </Card>
+
+            {/* Call to action */}
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-6">
+              <div>
+                <h3 className="text-xl font-semibold">Ready for a project‑specific takeoff?</h3>
+                <p className="text-slate-600">Upload drawings to generate an itemized quote with per‑panel costs and timeline.</p>
+              </div>
+              <div className="flex gap-3">
+                <Button size="lg" className="rounded-2xl">Upload CAD / PDF</Button>
+                <Button size="lg" variant="outline" className="rounded-2xl">Talk to an Engineer</Button>
+              </div>
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* Cost Analysis Table */}
-        <div className="bg-white shadow-md rounded-lg p-6">
-          <h2 className="text-lg font-medium text-slate-800 mb-4">Cost Analysis</h2>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200">
-                <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Cost Element</th>
-                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Cost</th>
-                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Stick Built</th>
-                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">TEKTRA</th>
-                <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Savings</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+      <footer className="mx-auto mt-10 max-w-7xl px-4 pb-16 text-sm text-slate-500">© {new Date().getFullYear()} TEKTRA • Off‑site Manufacturing</footer>
+    </main>
+  );
+}
 
-              {/* Division 1 Costs */}
-              {division1CostCategories.map((category) => {
-                const stickBuiltDailyCost = Number(savingsData[category.key as keyof SavingsData]) || 0;
-                const daysSaved = savingsData.projects.reduce((sum, project) => sum + (Number(project.daysSaved) || 0), 0);
-                const stickBuiltCost = stickBuiltDailyCost * daysSaved;
-                const tektraCost = 0; // TEKTRA eliminates Division 1 time-based costs
-                const savings = stickBuiltCost - tektraCost;
+// ===== Components =====
 
-                return (
-                  <tr key={category.key} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="py-3 px-2">
-                      <div>
-                        <div className="text-sm font-medium text-slate-800">{category.label}</div>
-                        <div className="text-xs text-slate-500">{category.description}</div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm">
-                      <div className="flex items-center justify-end">
-                        <input
-                          type="text"
-                          value={formatCurrency(stickBuiltDailyCost)} // Format input value to USD
-                          onChange={(e) => {
-                            const rawValue = e.target.value.replace(/[^0-9.]/g, ''); // Remove formatting for calculations
-                            handleInputChange(category.key as keyof SavingsData, rawValue);
-                          }}
-                          className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                        />
-                        <span className="ml-2 text-xs text-slate-500">/day</span> {/* Add unit */}
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-red-600">
-                      {formatCurrency(stickBuiltCost)} {/* Format Stick Built Cost */}
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-slate-400">
-                      {formatCurrency(tektraCost)} {/* Format TEKTRA Cost */}
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-green-600">
-                      {formatCurrency(savings)} {/* Format Savings */}
-                    </td>
-                  </tr>
-                );
-              })}
+function KpiCard({ title, value, sub, icon: Icon }: { title: string; value: string; sub?: string; icon: any }) {
+  return (
+    <Card className="rounded-2xl">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base font-medium text-slate-600">
+          <Icon className="h-4 w-4" aria-hidden /> {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold tracking-tight">{value}</div>
+        {sub ? <div className="text-xs text-slate-500">{sub}</div> : null}
+      </CardContent>
+    </Card>
+  );
+}
 
-              {/* Primary Construction Costs */}
-              {primaryCostElements.map((element) => {
-                const totalSqFt = savingsData.projects.reduce((sum, project) => sum + (project.projectSqFt || 0), 0); // Calculate total square footage
-                const totalCost = element.rate * totalSqFt; // Calculate total cost based on rate and total square footage
-
-                return (
-                  <tr key={element.key} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="py-3 px-2">
-                      <div>
-                        <div className="text-sm font-medium text-slate-800">{element.label}</div>
-                        <div className="text-xs text-slate-500">{element.description}</div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm">
-                      <div className="flex items-center justify-end">
-                        <input
-                          type="text"
-                          value={formatCurrency(element.rate)} // Format input value to USD
-                          onChange={(e) => {
-                            const rawValue = e.target.value.replace(/[^0-9.]/g, ''); // Remove formatting for calculations
-                            setSavingsData(prev => ({
-                              ...prev,
-                              primaryCostElements: prev.primaryCostElements.map((el) =>
-                                el.key === element.key
-                                  ? { ...el, rate: Number(rawValue) } // Preserve all properties and update only the rate
-                                  : el
-                              )
-                            }));
-                          }}
-                          className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                        />
-                        <span className="ml-2 text-xs text-slate-500">{element.unit}</span> {/* Add unit dynamically */}
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-red-600">
-                      {formatCurrency(totalCost)} {/* Display calculated total cost */}
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-slate-400">
-                      Included
-                    </td>
-                    <td className="py-3 px-2 text-right text-sm text-green-600">
-                      {formatCurrency(totalCost)} {/* Display savings (same as total cost for now) */}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {/* GC Fee */}
-              <tr className="hover:bg-slate-50/30 transition-colors">
-                <td className="py-3 px-2">
-                  <div>
-                    <div className="text-sm font-medium text-slate-800">GC Fee</div>
-                    <div className="text-xs text-slate-500">Calculated based on total construction costs</div>
-                  </div>
-                </td>
-                <td className="py-3 px-2 text-right text-sm">
-                  <input
-                    type="number"
-                    value={savingsData.gcFeePercent || ''}
-                    onChange={(e) => handleInputChange('gcFeePercent', e.target.value)}
-                    className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                    placeholder="Enter fee percentage"
-                    min="0"
-                    max="100"
-                  />
-                </td>
-                <td className="py-3 px-2 text-right text-sm text-red-600">
-                  {formatCurrency(calculations.traditionalTotalCost * (savingsData.gcFeePercent / 100) || 0)} {/* Stick Built GC Fee */}
-                </td>
-                <td className="py-3 px-2 text-right text-sm text-slate-400">
-                  Included
-                </td>
-                <td className="py-3 px-2 text-right text-sm text-green-600">
-                  {formatCurrency(calculations.traditionalTotalCost * (savingsData.gcFeePercent / 100) || 0)} {/* Savings */}
-                </td>
-              </tr>
-
-              {/* Total Project Costs */}
-              <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-lg">
-                <td className="py-6 px-2 text-slate-800">Total Project Cost</td>
-                <td className="py-6 px-2 text-right text-slate-400">
-                  N/A
-                </td>
-                <td className="py-6 px-2 text-right text-red-600">
-                  {formatCurrency(calculations.traditionalTotalCost || 0)}
-                </td>
-                <td className="py-6 px-2 text-right text-green-600">
-                  {formatCurrency(calculations.tektraTotalCost || 0)}
-                </td>
-                <td className="py-6 px-2 text-right text-green-700 text-xl">
-                  {formatCurrency(calculations.totalSavings || 0)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+function MiniStat({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border bg-white p-3">
+      <Icon className="h-5 w-5" aria-hidden />
+      <div>
+        <div className="text-xs text-slate-500">{label}</div>
+        <div className="text-sm font-semibold">{value}</div>
       </div>
     </div>
   );
 }
 
+function ProofPoint({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <div className="mb-1 text-sm font-semibold">{title}</div>
+      <p className="text-sm text-slate-600">{body}</p>
+    </div>
+  );
+}
