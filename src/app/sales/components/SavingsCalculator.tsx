@@ -575,14 +575,27 @@ export default function SavingsCalculator() {
                 <th className="px-2 py-2 text-right">TEKTRA Revenue</th>
                 <th className="px-2 py-2 text-right">Stick Sales @ Close</th>
                 <th className="px-2 py-2 text-right">TEKTRA Sales @ Close</th>
+                <th className="px-2 py-2 text-right">Stick Fee</th>
+                <th className="px-2 py-2 text-right">TEKTRA Fee</th>
                 <th className="px-2 py-2 text-right">Δ Revenue</th>
                 <th className="px-2 py-2 text-right">Running Δ Revenue</th>
+                <th className="px-2 py-2 text-right">Δ Fee</th>
+                <th className="px-2 py-2 text-right">Running Δ Fee</th>
+                <th className="px-2 py-2 text-right">Δ Sales</th>
+                <th className="px-2 py-2 text-right">Running Δ Sales</th>
               </tr>
             </thead>
             <tbody>
               {chartData.map((row, i) => {
                 const deltaRevenue = row.tektraRevenue - row.stickRevenue;
-                const runningDelta = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraRevenue - r.stickRevenue), 0);
+                const runningDeltaRevenue = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraRevenue - r.stickRevenue), 0);
+
+                const deltaFee = row.tektraFee - row.stickFee;
+                const runningDeltaFee = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraFee - r.stickFee), 0);
+
+                const deltaSales = row.tektraDevSales - row.stickDevSales;
+                const runningDeltaSales = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraDevSales - r.stickDevSales), 0);
+
                 return (
                   <tr key={row.month} className="border-t border-slate-100">
                     <td className="px-2 py-2">{row.month}</td>
@@ -590,10 +603,20 @@ export default function SavingsCalculator() {
                     <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraRevenue)}</td>
                     <td className="px-2 py-2 text-right">{fmtCurrency(row.stickDevSales)}</td>
                     <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraDevSales)}</td>
+                    <td className="px-2 py-2 text-right">{fmtCurrency(row.stickFee)}</td>
+                    <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraFee)}</td>
                     <td className={`px-2 py-2 text-right ${deltaRevenue > 0 ? 'text-green-700' : deltaRevenue < 0 ? 'text-red-700' : ''}`}>
                       {deltaRevenue > 0 ? '+' : ''}{fmtCurrency(deltaRevenue)}
                     </td>
-                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDelta)}</td>
+                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaRevenue)}</td>
+                    <td className={`px-2 py-2 text-right ${deltaFee > 0 ? 'text-green-700' : deltaFee < 0 ? 'text-red-700' : ''}`}>
+                      {deltaFee > 0 ? '+' : ''}{fmtCurrency(deltaFee)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaFee)}</td>
+                    <td className={`px-2 py-2 text-right ${deltaSales > 0 ? 'text-green-700' : deltaSales < 0 ? 'text-red-700' : ''}`}>
+                      {deltaSales > 0 ? '+' : ''}{fmtCurrency(deltaSales)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaSales)}</td>
                   </tr>
                 );
               })}
