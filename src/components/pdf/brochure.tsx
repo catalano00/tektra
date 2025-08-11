@@ -1,3 +1,4 @@
+// --- FILE: src/components/pdf/brochure.tsx (patched) ---
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 
 // --- Types ---
@@ -100,6 +101,13 @@ function buildTheme(brand: Brand) {
   } as const;
 }
 
+// --- Small utilities for gallery ---
+function chunk<T>(arr: T[] = [], size = 3): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < (arr?.length ?? 0); i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 // --- Section primitives ---
 function KPIGrid({ theme, kpis }: { theme: ReturnType<typeof buildTheme>; kpis: BrochureKPIs }) {
   return (
@@ -144,10 +152,6 @@ function CoverPage({ brand, theme, assets, kpis, inputs }: any) {
   const company = brand.company ?? 'TEKTRA';
   const tagline = brand.tagline ?? 'Precision-built. Faster cycles. Better returns.';
   const today = new Date().toLocaleDateString();
-
-  // Reusable cell styles with theme
-  const thStyle = { ...styles.th, backgroundColor: '#F3F4F6', borderColor: theme.line, color: theme.secondary };
-  const tdStyle = { ...styles.td, borderColor: theme.line, color: theme.ink };
 
   return (
     <Page size="A4" style={[styles.page, { color: theme.ink }]}>      
@@ -242,12 +246,10 @@ function WhyPage({ theme, inputs, brand }: any) {
   );
 }
 
-function MultiYearPage({ theme, annuals }: { theme: ReturnType<typeof buildTheme>; annuals: PlanTotals }) {
+function MultiYearTableView({ theme, annuals }: { theme: ReturnType<typeof buildTheme>; annuals: PlanTotals }) {
   return (
-    <Page size="A4" style={[styles.page, { color: theme.ink }]}>      
-      <Text style={[styles.h1, { color: theme.ink }]}>Multi-Year Impact (3 Years)</Text>
-
-      <View style={[styles.table, { borderColor: theme.line, marginTop: 8, marginBottom: 10 }]}>        
+    <View style={{ marginTop: 8, marginBottom: 10, borderColor: theme.line }}>        
+      <View style={[styles.table, { borderColor: theme.line }]}>        
         <View style={styles.tr}>
           <Text style={[{...styles.th, backgroundColor: '#F3F4F6', borderColor: theme.line, color: '#1F2B3A'}, { width: '10%' }]}>Year</Text>
           <Text style={[{...styles.th, backgroundColor: '#F3F4F6', borderColor: theme.line, color: '#1F2B3A'}, { width: '18%' }]}>Stick Dev</Text>
@@ -267,7 +269,15 @@ function MultiYearPage({ theme, annuals }: { theme: ReturnType<typeof buildTheme
           </View>
         ))}
       </View>
+    </View>
+  );
+}
 
+function MultiYearPage({ theme, annuals }: { theme: ReturnType<typeof buildTheme>; annuals: PlanTotals }) {
+  return (
+    <Page size="A4" style={[styles.page, { color: theme.ink }]}>      
+      <Text style={[styles.h1, { color: theme.ink }]}>Multi-Year Impact (3 Years)</Text>
+      <MultiYearTableView theme={theme} annuals={annuals} />
       <Text style={{ color: theme.muted, marginBottom: 8 }}>
         Completions uplift by year: {(annuals?.delta ?? []).map(d => d.completions).join(' / ')} (Y1 / Y2 / Y3)
       </Text>
@@ -292,6 +302,45 @@ function Year1DetailPage({ theme, assets }: { theme: ReturnType<typeof buildThem
         <Text>• Sales book at home completion month.</Text>
         <Text>• Carry accrues only while a home is active; shorter cycles reduce carry.</Text>
       </View>
+    </Page>
+  );
+}
+
+function GalleryPage({
+  theme,
+  assets,
+  title = 'Project Gallery',
+  columns = 3,
+}: {
+  theme: ReturnType<typeof buildTheme>;
+  assets: Assets;
+  title?: string;
+  columns?: number;
+}) {
+  const rows = chunk<string>(assets?.gallery ?? [], columns);
+  if (!rows.length) return null;
+
+  return (
+    <Page size="A4" style={[styles.page, { color: theme.ink }]}>      
+      <Text style={[styles.h1, { color: theme.ink }]}>{title}</Text>
+      <Text style={{ color: theme.muted, marginBottom: 8 }}>
+        Highlights from recent factory builds and on‑site assemblies. Replace with your branded photography.
+      </Text>
+
+      {rows.map((row, rIdx) => (
+        <View key={rIdx} style={[styles.row, { marginBottom: 8 }]}>          
+          {row.map((src, cIdx) => (
+            <View key={cIdx} style={{ flex: 1, marginRight: cIdx < row.length - 1 ? 8 : 0 }}>
+              <Image src={src} style={{ width: '100%', height: 90, borderRadius: 6, borderWidth: 1, borderColor: theme.line }} />
+            </View>
+          ))}
+          {Array.from({ length: Math.max(0, columns - row.length) }).map((_, i) => (
+            <View key={`pad-${i}`} style={{ flex: 1, marginLeft: 8 }} />
+          ))}
+        </View>
+      ))}
+
+      <Text style={[styles.footer, { color: theme.muted }]}>Imagery is representative; swap with client‑specific assets.</Text>
     </Page>
   );
 }
@@ -330,7 +379,7 @@ function NextStepsPage({ theme, brand, inputs }: any) {
 }
 
 // --- SELL SHEET (single-page variant) ---
-function SellSheetPage({ brand, theme, assets, kpis, inputs }: any) {
+function SellSheetPage({ brand, theme, assets, kpis }: any) {
   const company = brand.company ?? 'TEKTRA';
   const today = new Date().toLocaleDateString();
   return (
@@ -401,7 +450,8 @@ function InvestorPage({ brand, theme, annuals, kpis, assets }: any) {
         </View>
       </View>
 
-      <MultiYearPage theme={theme} annuals={annuals} />
+      {/* Use table-as-view to avoid nested Page */}
+      <MultiYearTableView theme={theme} annuals={annuals} />
 
       {assets?.chartAnnualPng && (
         <View style={{ marginTop: 8 }}>
@@ -423,6 +473,9 @@ export default function Brochure({
   annuals,
   assets = {},
   variant = 'brochure',
+  includeGallery = false,
+  galleryTitle = 'Project Gallery',
+  galleryColumns = 3,
 }: {
   brand?: Brand;
   inputs: any;
@@ -430,13 +483,16 @@ export default function Brochure({
   annuals: PlanTotals;
   assets?: Assets;
   variant?: Variant;
+  includeGallery?: boolean;
+  galleryTitle?: string;
+  galleryColumns?: number;
 }) {
   const theme = buildTheme(brand);
 
   if (variant === 'sellSheet') {
     return (
       <Document>
-        <SellSheetPage brand={brand} theme={theme} assets={assets} kpis={kpis} inputs={inputs} />
+        <SellSheetPage brand={brand} theme={theme} assets={assets} kpis={kpis} />
       </Document>
     );
   }
@@ -456,7 +512,35 @@ export default function Brochure({
       <WhyPage brand={brand} theme={theme} inputs={inputs} />
       <MultiYearPage theme={theme} annuals={annuals} />
       <Year1DetailPage theme={theme} assets={assets} />
+      {includeGallery && (assets?.gallery?.length ?? 0) > 0 && (
+        <GalleryPage theme={theme} assets={assets} title={galleryTitle} columns={galleryColumns} />
+      )}
       <NextStepsPage brand={brand} theme={theme} inputs={inputs} />
     </Document>
   );
 }
+
+
+
+// --- FILE: src/app/(wherever)/SavingsCalculator.tsx — patch for export hook ---
+// In your handleExportPDF, pass the CAPTURED chart images instead of static files.
+// Replace the assets object inside pdf(<Brochure ... />) with the following:
+/*
+assets={{
+  heroPng: '/images/hero-yard.png',
+  chartYear1Png: year1Png,   // <— use captured chart image
+  chartAnnualPng: annualPng, // <— use captured chart image
+  gallery: [
+    '/gallery/factory-cutting.jpg',
+    '/gallery/panel-assembly.jpg',
+    '/gallery/crane-set-1.jpg',
+    '/gallery/crane-set-2.jpg',
+    '/gallery/interior-finish.jpg',
+    '/gallery/exterior-elevation.jpg',
+  ],
+}}
+includeGallery
+galleryTitle="TEKTRA Project Gallery"
+galleryColumns={3}
+variant="brochure"
+*/
