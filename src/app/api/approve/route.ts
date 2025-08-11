@@ -24,7 +24,10 @@ export async function POST(req: Request) {
       create: {
         projectId: data.projectnametag,
         currentStatus: 'Active',
-        client: 'Unknown', // Default values - you can update these
+        // Client relation is required by your Prisma schema
+        Client: {
+          connect: { id: data.clientId || 'some-existing-client-id' }
+        },
         streetaddress: '',
         city: '',
         state: '', 

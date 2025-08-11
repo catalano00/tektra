@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
           ? {
               projectId: entry.component.Project.projectId,
               currentStatus: entry.component.Project.currentStatus,
-              client: entry.component.Project.client,
+              client: entry.component.Project.clientId,
               streetaddress: entry.component.Project.streetaddress,
               city: entry.component.Project.city,
               state: entry.component.Project.state,

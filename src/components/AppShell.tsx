@@ -8,7 +8,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <Sidebar collapsed={collapsed} setCollapsedAction={setCollapsed} />
       <div className={`transition-all duration-300 ${collapsed ? 'ml-20' : 'ml-64'}`}>
         {children}
       </div>

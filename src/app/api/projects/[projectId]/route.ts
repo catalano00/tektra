@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       select: {
         projectId: true,
         currentStatus: true,
-        client: true,
+        Client: true,
         city: true,
         state: true,
         streetaddress: true,

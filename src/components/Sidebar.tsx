@@ -41,10 +41,10 @@ const bottomLinks = [
 
 type SidebarProps = {
   collapsed: boolean;
-  setCollapsed: (collapsed: boolean) => void;
+  setCollapsedAction: (collapsed: boolean) => void;
 };
 
-export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
+export default function Sidebar({ collapsed, setCollapsedAction }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
@@ -127,7 +127,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         {/* Collapse Toggle */}
         <div className="mt-6 pt-4 border-t border-gray-700 flex justify-center">
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={() => setCollapsedAction(!collapsed)}
             className="text-gray-400 hover:text-white transition"
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >

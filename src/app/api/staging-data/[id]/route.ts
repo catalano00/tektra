@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // Ensure Prisma is properly configured
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+// Next.js Route Handler expects (req: NextRequest)
+export async function GET(req: NextRequest) {
   try {
-    const { id } = params;
+    let id = req.nextUrl.searchParams.get('id') ?? undefined;
+    // If using dynamic route, extract id from pathname:
+    // const id = req.nextUrl.pathname.split('/').pop();
+    // id will be either string or undefined
 
     // Fetch the staging data by ID
     const stagingData = await prisma.stagingData.findUnique({
@@ -22,9 +26,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest) {
   try {
-    const { id } = params;
+    const id = req.nextUrl.searchParams.get('id') ?? undefined;
     const body = await req.json();
 
     // Update the staging data
