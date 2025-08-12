@@ -104,29 +104,29 @@ export default function SavingsCalculator() {
     phaseSize: 4,
     stickPhaseInterval: 3,
     tektraPhaseInterval: 1, // default value for stick, not used
-    wipCapHomes: 8,
+    wipCapHomes: 12,
     stickDurationMonths: 10,
     tektraDurationMonths: 6, // not used for stick
     projectSqFt: 3000,
     devCostPerSqFt: 650,
     salesPerSqFt: 850,
     homesSoldPerProject: 1,
-    gcFeePercent: 8,
+    gcFeePercent: 17,
     carryPerMonth: 15000,
   });
   const [tektraGlobals, setTektraGlobals] = useState<GlobalSettings>({
     totalHomes: 24,
     phaseSize: 4,
     stickPhaseInterval: 3, // legacy, not used for TEKTRA
-    tektraPhaseInterval: 3, // <-- add this for independent TEKTRA interval
-    wipCapHomes: 8,
+    tektraPhaseInterval: 1, // <-- add this for independent TEKTRA interval
+    wipCapHomes: 12,
     stickDurationMonths: 10, // not used for TEKTRA
     tektraDurationMonths: 6,
     projectSqFt: 3000,
     devCostPerSqFt: 650,
     salesPerSqFt: 850,
     homesSoldPerProject: 1,
-    gcFeePercent: 8,
+    gcFeePercent: 17,
     carryPerMonth: 15000,
   });
 
