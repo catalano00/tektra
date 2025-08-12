@@ -11,6 +11,7 @@ import {
 import { pdf } from '@react-pdf/renderer';
 import Brochure from '@/components/pdf/brochure';
 import { useChartCapture } from '@/components/useChartCapture';
+import { Button } from '@/components/ui/button';
 
 // ---------- Brand theme for both UI and PDF ----------
 const BRAND = {
@@ -225,13 +226,16 @@ export default function SavingsCalculator() {
 
   // ---------- Year-1 series ----------
   const globals = stickGlobals; // or choose tektraGlobals if needed
-  const feeRate = (globals.gcFeePercent || 0) / 100;
+  // Use plan-specific fee rates instead of a single shared one
+  const stickFeeRate = (stickGlobals.gcFeePercent || 0) / 100;
+  const tektraFeeRate = (tektraGlobals.gcFeePercent || 0) / 100;
 
   function valueAtCompletion(h: HomeRow) {
     return (h.projectSqFt || 0) * (h.salesPerSqFt || 0) * (h.homesSold || 0);
   }
 
-  function seriesFor(plan: HomeRow[]) {
+  // Accept plan-specific feeRate and carryPerMonth for accurate per-plan series
+  function seriesFor(plan: HomeRow[], feeRate: number, carryPerMonth: number) {
     return Array.from({ length: 12 }, (_, i) => {
       const m = i + 1;
       let devRevenue = 0, devSales = 0, feeProfit = 0, carryCost = 0;
@@ -242,7 +246,7 @@ export default function SavingsCalculator() {
           const monthlyDev = h.estimatedDevelopmentValue / h.duration; // straight-line
           devRevenue += monthlyDev;
           feeProfit += monthlyDev * feeRate;
-          carryCost += globals.carryPerMonth;
+          carryCost += carryPerMonth;
         }
         if (m === h.endMonth) devSales += valueAtCompletion(h);
       });
@@ -251,8 +255,8 @@ export default function SavingsCalculator() {
     });
   }
 
-  const stickSeries = useMemo(() => seriesFor(stickPlan), [stickPlan, globals.gcFeePercent, globals.carryPerMonth]);
-  const tektraSeries = useMemo(() => seriesFor(tektraPlan), [tektraPlan, globals.gcFeePercent, globals.carryPerMonth]);
+  const stickSeries = useMemo(() => seriesFor(stickPlan, stickFeeRate, stickGlobals.carryPerMonth), [stickPlan, stickFeeRate, stickGlobals.carryPerMonth]);
+  const tektraSeries = useMemo(() => seriesFor(tektraPlan, tektraFeeRate, tektraGlobals.carryPerMonth), [tektraPlan, tektraFeeRate, tektraGlobals.carryPerMonth]);
 
   const chartData = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
@@ -297,7 +301,8 @@ export default function SavingsCalculator() {
   const incrementalSales = totals.salesTektra - totals.salesStick;
   const incrementalFee = totals.feeTektra - totals.feeStick;
   const carrySavings = Math.max(0, totals.carryStick - totals.carryTektra);
-  const annualOpportunity = incrementalDevValue + incrementalSales + incrementalFee + carrySavings;
+  // Totals exclude Fee & Carry: only Dev + Sales
+  const annualOpportunity = incrementalDevValue + incrementalSales;
 
   // ---------- Multi-year (3y) for PDF ----------
   const sum = (a: number, b: number) => a + b;
@@ -344,10 +349,19 @@ export default function SavingsCalculator() {
     return out;
   }
 
-  function multiYearTotals(stickPlan: HomeRow[], tektraPlan: HomeRow[], years = 3, monthsPerYear = 12, feeRate = 0, carryPerMonth = 0) {
+  function multiYearTotals(
+    stickPlan: HomeRow[],
+    tektraPlan: HomeRow[],
+    years = 3,
+    monthsPerYear = 12,
+    stickFeeRateLocal = 0,
+    tektraFeeRateLocal = 0,
+    stickCarryPerMonth = 0,
+    tektraCarryPerMonth = 0
+  ) {
     const months = years * monthsPerYear;
-    const sRows = seriesForMonths(stickPlan, months, feeRate, carryPerMonth);
-    const tRows = seriesForMonths(tektraPlan, months, feeRate, carryPerMonth);
+    const sRows = seriesForMonths(stickPlan, months, stickFeeRateLocal, stickCarryPerMonth);
+    const tRows = seriesForMonths(tektraPlan, months, tektraFeeRateLocal, tektraCarryPerMonth);
 
     const stick = aggregateByYear(sRows, stickPlan, monthsPerYear);
     const tektra = aggregateByYear(tRows, tektraPlan, monthsPerYear);
@@ -365,8 +379,17 @@ export default function SavingsCalculator() {
 
   const yearsToShow = 3;
   const planTotals = useMemo(
-    () => multiYearTotals(stickPlan, tektraPlan, yearsToShow, 12, feeRate, globals.carryPerMonth),
-    [stickPlan, tektraPlan, yearsToShow, feeRate, globals.carryPerMonth]
+    () => multiYearTotals(
+      stickPlan,
+      tektraPlan,
+      yearsToShow,
+      12,
+      stickFeeRate,
+      tektraFeeRate,
+      stickGlobals.carryPerMonth,
+      tektraGlobals.carryPerMonth
+    ),
+    [stickPlan, tektraPlan, yearsToShow, stickFeeRate, tektraFeeRate, stickGlobals.carryPerMonth, tektraGlobals.carryPerMonth]
   );
 
   // ---------- Capture + PDF ----------
@@ -374,18 +397,18 @@ export default function SavingsCalculator() {
   const annualChart = useChartCapture();
 
   const inputs = {
-    totalHomes: globals.totalHomes,
-    phaseSize: globals.phaseSize,
-    stickPhaseInterval: globals.stickPhaseInterval,
-    wipCapHomes: globals.wipCapHomes,
-    stickDurationMonths: globals.stickDurationMonths,
-    tektraDurationMonths: globals.tektraDurationMonths,
-    projectSqFt: globals.projectSqFt,
-    devCostPerSqFt: globals.devCostPerSqFt,
-    salesPerSqFt: globals.salesPerSqFt,
-    homesSoldPerProject: globals.homesSoldPerProject,
-    gcFeePercent: globals.gcFeePercent,
-    carryPerMonth: globals.carryPerMonth,
+    totalHomes: stickGlobals.totalHomes,
+    phaseSize: stickGlobals.phaseSize,
+    stickPhaseInterval: stickGlobals.stickPhaseInterval,
+    wipCapHomes: stickGlobals.wipCapHomes,
+    stickDurationMonths: stickGlobals.stickDurationMonths,
+    tektraDurationMonths: tektraGlobals.tektraDurationMonths, // ensure current TEKTRA duration reflected
+    projectSqFt: stickGlobals.projectSqFt,
+    devCostPerSqFt: stickGlobals.devCostPerSqFt,
+    salesPerSqFt: stickGlobals.salesPerSqFt,
+    homesSoldPerProject: stickGlobals.homesSoldPerProject,
+    gcFeePercent: stickGlobals.gcFeePercent,
+    carryPerMonth: stickGlobals.carryPerMonth,
   };
 
   async function handleExportPDF() {
@@ -456,20 +479,6 @@ export default function SavingsCalculator() {
 
     return (
       <div>
-        {/* Hero Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-            <div className="text-xs text-slate-500">Total Year‑1 Opportunity</div>
-            <div className="text-3xl font-semibold" style={{ color: BRAND.accent }}>{fmtCurrency(annualOpportunity)}</div>
-            <div className="text-xs text-slate-500 mt-1">Δ Dev + Δ Sales</div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-            <div className="text-xs text-slate-500">Additional Completions (Year‑1)</div>
-            <div className="text-3xl font-semibold">{additionalCompletions}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick under same WIP cap</div>
-          </div>
-        </div>
-
         {/* KPI summary (grouped Stick/TEKTRA stats) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* TEKTRA Stats */}
@@ -479,11 +488,11 @@ export default function SavingsCalculator() {
               <div>
                 <div className="text-xs text-slate-500">Total Revenue</div>
                 <div className="text-xl font-bold" style={{ color: BRAND.accent }}>
-                  {fmtCurrency(totals.revTektra + totals.salesTektra + totals.feeTektra)}
+                  {fmtCurrency(totals.revTektra + totals.salesTektra)}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500">Dev Value</div>
+                <div className="text-xs text-slate-500">Construction Revenue</div>
                 <div className="text-xl font-semibold">{fmtCurrency(totals.revTektra)}</div>
               </div>
               <div>
@@ -507,7 +516,7 @@ export default function SavingsCalculator() {
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500">Dev Value</div>
+                <div className="text-xs text-slate-500">Construction Revenue</div>
                 <div className="text-xl font-semibold">{fmtCurrency(totals.revStick)}</div>
               </div>
               <div>
@@ -522,28 +531,9 @@ export default function SavingsCalculator() {
           </div>
         </div>
 
-        {/* Delta/Opportunity Tiles */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Development Value</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalDevValue)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Sales @ Close</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalSales)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Fee Profit</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalFee)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-        </div>
-
         {/* Year-1 Chart (shared) */}
         <div className="mb-8">
-          <div className="text-lg font-bold text-slate-900 mb-2">Year‑1 Results (Dev Value + Sales)</div>
+          <div className="text-lg font-bold text-slate-900 mb-2">Year‑1 Results (Construction Revenue + Sales)</div>
           <div ref={year1Chart.ref}>
             <ResponsiveContainer width="100%" height={320}>
               <BarChart data={chartData}>
@@ -552,124 +542,75 @@ export default function SavingsCalculator() {
                 <YAxis tickFormatter={formatAbbreviatedUSD} />
                 <Tooltip formatter={formatAbbreviatedUSD} />
                 <Legend />
-                <Bar dataKey="stickRevenue" fill={COLORS.stickDev} name="Stick Dev Value" />
-                <Bar dataKey="tektraRevenue" fill={COLORS.tektraDev} name="TEKTRA Dev Value" />
+                <Bar dataKey="stickRevenue" fill={COLORS.stickDev} name="Stick Construction Revenue" />
+                <Bar dataKey="tektraRevenue" fill={COLORS.tektraDev} name="TEKTRA Construction Revenue" />
                 <Bar dataKey="stickDevSales" fill={COLORS.stickSales} name="Stick Sales @ Close" />
                 <Bar dataKey="tektraDevSales" fill={COLORS.tektraSales} name="TEKTRA Sales @ Close" />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 text-sm text-slate-600">
-            Development value recognized straight‑line while active. Sales book at completion month.
+            Construction Revenue recognized straight‑line while active. Sales book at completion month.
           </div>
         </div>
 
         {/* Year-1 Monthly Table */}
         <div className="mb-8">
           <div className="text-lg font-bold text-slate-900 mb-2">Year‑1 Monthly Breakdown</div>
-          <table className="min-w-full border border-slate-200 rounded text-xs mb-2">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="px-2 py-2">Month</th>
-                <th className="px-2 py-2 text-right">Stick Revenue</th>
-                <th className="px-2 py-2 text-right">TEKTRA Revenue</th>
-                <th className="px-2 py-2 text-right">Stick Sales @ Close</th>
-                <th className="px-2 py-2 text-right">TEKTRA Sales @ Close</th>
-                <th className="px-2 py-2 text-right">Stick Fee</th>
-                <th className="px-2 py-2 text-right">TEKTRA Fee</th>
-                <th className="px-2 py-2 text-right">Δ Revenue</th>
-                <th className="px-2 py-2 text-right">Running Δ Revenue</th>
-                <th className="px-2 py-2 text-right">Δ Fee</th>
-                <th className="px-2 py-2 text-right">Running Δ Fee</th>
-                <th className="px-2 py-2 text-right">Δ Sales</th>
-                <th className="px-2 py-2 text-right">Running Δ Sales</th>
-              </tr>
-            </thead>
-            <tbody>
-              {chartData.map((row, i) => {
-                const deltaRevenue = row.tektraRevenue - row.stickRevenue;
-                const runningDeltaRevenue = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraRevenue - r.stickRevenue), 0);
-
-                const deltaFee = row.tektraFee - row.stickFee;
-                const runningDeltaFee = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraFee - r.stickFee), 0);
-
-                const deltaSales = row.tektraDevSales - row.stickDevSales;
-                const runningDeltaSales = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraDevSales - r.stickDevSales), 0);
-
-                return (
-                  <tr key={row.month} className="border-t border-slate-100">
-                    <td className="px-2 py-2">{row.month}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.stickRevenue)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraRevenue)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.stickDevSales)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraDevSales)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.stickFee)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraFee)}</td>
-                    <td className={`px-2 py-2 text-right ${deltaRevenue > 0 ? 'text-green-700' : deltaRevenue < 0 ? 'text-red-700' : ''}`}>
-                      {deltaRevenue > 0 ? '+' : ''}{fmtCurrency(deltaRevenue)}
-                    </td>
-                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaRevenue)}</td>
-                    <td className={`px-2 py-2 text-right ${deltaFee > 0 ? 'text-green-700' : deltaFee < 0 ? 'text-red-700' : ''}`}>
-                      {deltaFee > 0 ? '+' : ''}{fmtCurrency(deltaFee)}
-                    </td>
-                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaFee)}</td>
-                    <td className={`px-2 py-2 text-right ${deltaSales > 0 ? 'text-green-700' : deltaSales < 0 ? 'text-red-700' : ''}`}>
-                      {deltaSales > 0 ? '+' : ''}{fmtCurrency(deltaSales)}
-                    </td>
-                    <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaSales)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Annualized (3y) */}
-        <div className="mb-8">
-          <div className="text-lg font-bold text-slate-900 mb-2">Annualized (3 Years)</div>
-          <div ref={annualChart.ref}>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={planTotals.stick.map((s, i) => ({
-                year: `Y${i+1}`,
-                stick: s.devValue + s.sales,
-                tektra: (planTotals.tektra[i]?.devValue || 0) + (planTotals.tektra[i]?.sales || 0),
-              }))}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-                <XAxis dataKey="year" />
-                <YAxis tickFormatter={formatAbbreviatedUSD} />
-                <Tooltip formatter={formatAbbreviatedUSD} />
-                <Legend />
-                <Bar dataKey="stick"  fill={COLORS.stickDev} name="Stick (Dev+Sales)" />
-                <Bar dataKey="tektra" fill={COLORS.tektraDev} name="TEKTRA (Dev+Sales)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          {/* Annualized Table */}
-          <div className="mt-4">
-            <table className="min-w-full border border-slate-200 rounded text-xs mb-2">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-xs mb-0">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="px-2 py-2">Year</th>
-                  <th className="px-2 py-2 text-right">Stick Revenue</th>
-                  <th className="px-2 py-2 text-right">TEKTRA Revenue</th>
-                  <th className="px-2 py-2 text-right">Δ Revenue</th>
-                  <th className="px-2 py-2 text-right">Stick Completions</th>
-                  <th className="px-2 py-2 text-right">TEKTRA Completions</th>
+                  <th className="px-2 py-2 sticky top-0 z-10 bg-slate-50">Month</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Stick Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">TEKTRA Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Stick Sales @ Close</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">TEKTRA Sales @ Close</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Stick Fee</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">TEKTRA Fee</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Δ Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Running Δ Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Δ Fee</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Running Δ Fee</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Δ Sales</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Running Δ Sales</th>
                 </tr>
               </thead>
               <tbody>
-                {annualizedTableData.map((row, i) => (
-                  <tr key={row.year} className="border-t border-slate-100">
-                    <td className="px-2 py-2">{row.year}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.stick)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(row.tektra)}</td>
-                    <td className={`px-2 py-2 text-right ${row.delta > 0 ? 'text-green-700' : row.delta < 0 ? 'text-red-700' : ''}`}>
-                      {row.delta > 0 ? '+' : ''}{fmtCurrency(row.delta)}
-                    </td>
-                    <td className="px-2 py-2 text-right">{row.completionsStick}</td>
-                    <td className="px-2 py-2 text-right">{row.completionsTektra}</td>
-                  </tr>
-                ))}
+                {chartData.map((row, i) => {
+                  const deltaRevenue = row.tektraRevenue - row.stickRevenue;
+                  const runningDeltaRevenue = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraRevenue - r.stickRevenue), 0);
+
+                  const deltaFee = row.tektraFee - row.stickFee;
+                  const runningDeltaFee = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraFee - r.stickFee), 0);
+
+                  const deltaSales = row.tektraDevSales - row.stickDevSales;
+                  const runningDeltaSales = chartData.slice(0, i + 1).reduce((sum, r) => sum + (r.tektraDevSales - r.stickDevSales), 0);
+
+                  return (
+                    <tr key={row.month} className="border-t border-slate-100">
+                      <td className="px-2 py-2">{row.month}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.stickRevenue)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraRevenue)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.stickDevSales)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraDevSales)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.stickFee)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(row.tektraFee)}</td>
+                      <td className={`px-2 py-2 text-right ${deltaRevenue > 0 ? 'text-green-700' : deltaRevenue < 0 ? 'text-red-700' : ''}`}>
+                        {deltaRevenue > 0 ? '+' : ''}{fmtCurrency(deltaRevenue)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaRevenue)}</td>
+                      <td className={`px-2 py-2 text-right ${deltaFee > 0 ? 'text-green-700' : deltaFee < 0 ? 'text-red-700' : ''}`}>
+                        {deltaFee > 0 ? '+' : ''}{fmtCurrency(deltaFee)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaFee)}</td>
+                      <td className={`px-2 py-2 text-right ${deltaSales > 0 ? 'text-green-700' : deltaSales < 0 ? 'text-red-700' : ''}`}>
+                        {deltaSales > 0 ? '+' : ''}{fmtCurrency(deltaSales)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-semibold">{fmtCurrency(runningDeltaSales)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -677,13 +618,12 @@ export default function SavingsCalculator() {
 
         {/* Export */}
         <div className="flex justify-end">
-          <button
+          <Button
             type="button"
             onClick={handleExportPDF}
-            className="inline-flex items-center px-3 py-2 rounded bg-[#0B1220] text-white text-sm font-semibold hover:opacity-90"
           >
             Export PDF Brochure
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -694,49 +634,10 @@ export default function SavingsCalculator() {
       <div>
         {/* Title + explainer */}
         <div className="mb-4">
-          <h1 className="text-xl md:text-2xl font-semibold text-slate-900">TEKTRA Opportunity — Phased Starts (Year‑1)</h1>
+          <h2 className="text-medium md:text-medium font-semibold text-slate-900">TEKTRA Opportunity — Phased Starts (Year‑1)</h2>
           <p className="text-sm text-slate-600 mt-1">
             Define phase size and cadence for stick‑built. TEKTRA pulls phase starts forward based on cycle‑time savings, under the same WIP cap.
           </p>
-        </div>
-
-        {/* KPI summary (compact) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Total Year‑1 Opportunity (All‑in)</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(annualOpportunity)}</div>
-            <div className="text-xs text-slate-500 mt-1">Δ Dev + Δ Sales</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Total TEKTRA (Year‑1)</div>
-            <div className="text-2xl font-semibold" style={{ color: BRAND.accent }}>{fmtCurrency(totals.revTektra + totals.salesTektra + totals.feeTektra)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA Dev + Sales + Fee</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Total Stick (Year‑1)</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(totals.revStick + totals.salesStick + totals.feeStick)}</div>
-            <div className="text-xs text-slate-500 mt-1">Stick Dev + Sales + Fee</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Development Value</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalDevValue)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Sales @ Close</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalSales)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Δ Fee Profit</div>
-            <div className="text-2xl font-semibold">{fmtCurrency(incrementalFee)}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick</div>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-3">
-            <div className="text-xs text-slate-500">Additional Completions (Year‑1)</div>
-            <div className="text-2xl font-semibold">{additionalCompletions}</div>
-            <div className="text-xs text-slate-500 mt-1">TEKTRA vs Stick under same WIP cap</div>
-          </div>
         </div>
 
         {/* TEKTRA Inputs */}
@@ -747,7 +648,7 @@ export default function SavingsCalculator() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Total Homes (Pipeline)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, totalHomes: Math.max(0, g.totalHomes - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, totalHomes: Math.max(0, g.totalHomes - 1) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -755,14 +656,15 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, totalHomes: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="total homes"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, totalHomes: g.totalHomes + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, totalHomes: g.totalHomes + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Homes per Phase</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, phaseSize: Math.max(1, g.phaseSize - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, phaseSize: Math.max(1, g.phaseSize - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -770,8 +672,9 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, phaseSize: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="homes per phase"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, phaseSize: g.phaseSize + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, phaseSize: g.phaseSize + 1 }))}>+</button>
               </div>
             </div>
             <div>
@@ -779,6 +682,7 @@ export default function SavingsCalculator() {
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
                 <button
                   type="button"
+                  aria-label="decrease"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -798,9 +702,11 @@ export default function SavingsCalculator() {
                   }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="phase interval in months"
                 />
                 <button
                   type="button"
+                  aria-label="increase"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -817,7 +723,7 @@ export default function SavingsCalculator() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Max Concurrent Homes (WIP cap)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, wipCapHomes: Math.max(1, g.wipCapHomes - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, wipCapHomes: Math.max(1, g.wipCapHomes - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -825,14 +731,15 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, wipCapHomes: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="wip cap"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, wipCapHomes: g.wipCapHomes + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, wipCapHomes: g.wipCapHomes + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Duration (mo)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, tektraDurationMonths: Math.max(1, g.tektraDurationMonths - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, tektraDurationMonths: Math.max(1, g.tektraDurationMonths - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -840,14 +747,15 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, tektraDurationMonths: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="duration months"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, tektraDurationMonths: g.tektraDurationMonths + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, tektraDurationMonths: g.tektraDurationMonths + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Avg Sq Ft / Home</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, projectSqFt: Math.max(0, g.projectSqFt - 100) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, projectSqFt: Math.max(0, g.projectSqFt - 100) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -855,14 +763,15 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, projectSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="average square feet per home"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, projectSqFt: g.projectSqFt + 100 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, projectSqFt: g.projectSqFt + 100 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Dev Cost $/sf</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, devCostPerSqFt: Math.max(0, g.devCostPerSqFt - 10) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, devCostPerSqFt: Math.max(0, g.devCostPerSqFt - 10) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -870,14 +779,15 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, devCostPerSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="dev cost per square foot"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, devCostPerSqFt: g.devCostPerSqFt + 10 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, devCostPerSqFt: g.devCostPerSqFt + 10 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Sales $/sf</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, salesPerSqFt: Math.max(0, g.salesPerSqFt - 10) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, salesPerSqFt: Math.max(0, g.salesPerSqFt - 10) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -885,15 +795,17 @@ export default function SavingsCalculator() {
                   onChange={e => setTektraGlobals(g => ({ ...g, salesPerSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="sales per square foot"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, salesPerSqFt: g.salesPerSqFt + 10 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setTektraGlobals(g => ({ ...g, salesPerSqFt: g.salesPerSqFt + 10 }))}>+</button>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">GC Fee % (on dev value)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">GC Fee % (on Construction Revenue)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
                 <button
                   type="button"
+                  aria-label="decrease"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -914,9 +826,11 @@ export default function SavingsCalculator() {
                   }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="gc fee percent"
                 />
                 <button
                   type="button"
+                  aria-label="increase"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -937,7 +851,7 @@ export default function SavingsCalculator() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Total Homes (Pipeline)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, totalHomes: Math.max(0, g.totalHomes - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, totalHomes: Math.max(0, g.totalHomes - 1) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -945,14 +859,15 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, totalHomes: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="total homes"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, totalHomes: g.totalHomes + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, totalHomes: g.totalHomes + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Homes per Phase</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, phaseSize: Math.max(1, g.phaseSize - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, phaseSize: Math.max(1, g.phaseSize - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -960,8 +875,9 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, phaseSize: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="homes per phase"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, phaseSize: g.phaseSize + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, phaseSize: g.phaseSize + 1 }))}>+</button>
               </div>
             </div>
             <div>
@@ -969,6 +885,7 @@ export default function SavingsCalculator() {
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
                 <button
                   type="button"
+                  aria-label="decrease"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -988,9 +905,11 @@ export default function SavingsCalculator() {
                   }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="phase interval in months"
                 />
                 <button
                   type="button"
+                  aria-label="increase"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -1004,7 +923,7 @@ export default function SavingsCalculator() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Max Concurrent Homes (WIP cap)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, wipCapHomes: Math.max(1, g.wipCapHomes - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, wipCapHomes: Math.max(1, g.wipCapHomes - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -1012,14 +931,15 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, wipCapHomes: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="wip cap"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, wipCapHomes: g.wipCapHomes + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, wipCapHomes: g.wipCapHomes + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Duration (mo)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, stickDurationMonths: Math.max(1, g.stickDurationMonths - 1) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, stickDurationMonths: Math.max(1, g.stickDurationMonths - 1) }))}>−</button>
                 <input
                   type="number"
                   min={1}
@@ -1027,14 +947,15 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, stickDurationMonths: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="duration months"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, stickDurationMonths: g.stickDurationMonths + 1 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, stickDurationMonths: g.stickDurationMonths + 1 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Avg Sq Ft / Home</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, projectSqFt: Math.max(0, g.projectSqFt - 100) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, projectSqFt: Math.max(0, g.projectSqFt - 100) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -1042,14 +963,15 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, projectSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="average square feet per home"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, projectSqFt: g.projectSqFt + 100 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, projectSqFt: g.projectSqFt + 100 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Dev Cost $/sf</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, devCostPerSqFt: Math.max(0, g.devCostPerSqFt - 10) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, devCostPerSqFt: Math.max(0, g.devCostPerSqFt - 10) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -1057,14 +979,15 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, devCostPerSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="dev cost per square foot"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, devCostPerSqFt: g.devCostPerSqFt + 10 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, devCostPerSqFt: g.devCostPerSqFt + 10 }))}>+</button>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Sales $/sf</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, salesPerSqFt: Math.max(0, g.salesPerSqFt - 10) }))}>−</button>
+                <button type="button" aria-label="decrease" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, salesPerSqFt: Math.max(0, g.salesPerSqFt - 10) }))}>−</button>
                 <input
                   type="number"
                   min={0}
@@ -1072,15 +995,17 @@ export default function SavingsCalculator() {
                   onChange={e => setStickGlobals(g => ({ ...g, salesPerSqFt: Number(e.target.value) }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="sales per square foot"
                 />
-                <button type="button" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, salesPerSqFt: g.salesPerSqFt + 10 }))}>+</button>
+                <button type="button" aria-label="increase" className="px-2 text-lg text-blue-700" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => setStickGlobals(g => ({ ...g, salesPerSqFt: g.salesPerSqFt + 10 }))}>+</button>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">GC Fee % (on dev value)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">GC Fee % (on Construction Revenue)</label>
               <div className="flex items-center border rounded px-2 py-1 bg-slate-50">
                 <button
                   type="button"
+                  aria-label="decrease"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -1101,9 +1026,11 @@ export default function SavingsCalculator() {
                   }))}
                   className="w-full bg-transparent border-none text-sm text-center focus:ring-0"
                   autoComplete="off"
+                  aria-label="gc fee percent"
                 />
                 <button
                   type="button"
+                  aria-label="increase"
                   className="px-2 text-lg text-blue-700"
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
@@ -1119,41 +1046,43 @@ export default function SavingsCalculator() {
         {/* Stick Table */}
         <div className="mb-8">
           <div className="text-lg font-bold text-[#1F2B3A] mb-2">Stick Built — Phased Starts</div>
-          <table className="min-w-full border border-slate-200 rounded text-xs mb-2">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="px-2 py-2">#</th>
-                <th className="px-2 py-2 text-right">Start</th>
-                <th className="px-2 py-2 text-right">Duration</th>
-                <th className="px-2 py-2 text-right">End</th>
-                <th className="px-2 py-2 text-right">Sq Ft</th>
-                <th className="px-2 py-2 text-right">Dev $/sf</th>
-                <th className="px-2 py-2 text-right">Dev Value</th>
-                <th className="px-2 py-2 text-right">Sales Revenue</th>
-                <th className="px-2 py-2 text-right">Fee ($)</th> {/* New column */}
-              </tr>
-            </thead>
-            <tbody>
-              {stickPlan.map((h, i) => {
-                const fee = (h.estimatedDevelopmentValue * (stickGlobals.gcFeePercent / 100));
-                return (
-                  <tr key={h.id} className="border-t border-slate-100">
-                    <td className="px-2 py-2">{i + 1}</td>
-                    <td className="px-2 py-2 text-right">{h.startMonth}</td>
-                    <td className="px-2 py-2 text-right">{h.duration}</td>
-                    <td className="px-2 py-2 text-right">{h.endMonth}</td>
-                    <td className="px-2 py-2 text-right">{h.projectSqFt.toLocaleString()}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(h.devCostPerSqFt)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(h.estimatedDevelopmentValue)}</td>
-                    <td className="px-2 py-2 text-right">
-                      {fmtCurrency((h.projectSqFt || 0) * (h.salesPerSqFt || 0) * (h.homesSold || 1))}
-                    </td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(fee)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-xs mb-0">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="px-2 py-2 sticky top-0 z-10 bg-slate-50">#</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Start</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Duration</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">End</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Sq Ft</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Dev $/sf</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Construction Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Sales Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Fee ($)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {stickPlan.map((h, i) => {
+                  const fee = (h.estimatedDevelopmentValue * (stickGlobals.gcFeePercent / 100));
+                  return (
+                    <tr key={h.id} className="border-t border-slate-100 hover:bg-slate-50/30 transition-colors">
+                      <td className="px-2 py-2">{i + 1}</td>
+                      <td className="px-2 py-2 text-right">{h.startMonth}</td>
+                      <td className="px-2 py-2 text-right">{h.duration}</td>
+                      <td className="px-2 py-2 text-right">{h.endMonth}</td>
+                      <td className="px-2 py-2 text-right">{h.projectSqFt.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(h.devCostPerSqFt)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(h.estimatedDevelopmentValue)}</td>
+                      <td className="px-2 py-2 text-right">
+                        {fmtCurrency((h.projectSqFt || 0) * (h.salesPerSqFt || 0) * (h.homesSold || 1))}
+                      </td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(fee)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <div className="text-[11px] text-slate-500">
             Starts {stickGlobals.phaseSize} homes every {stickGlobals.stickPhaseInterval} months, capacity‑limited to {stickGlobals.wipCapHomes} concurrent homes.
           </div>
@@ -1162,43 +1091,45 @@ export default function SavingsCalculator() {
         {/* TEKTRA Table */}
         <div className="mb-8">
           <div className="text-lg font-bold" style={{ color: BRAND.accent }}>TEKTRA — Phased Starts (Accelerated)</div>
-          <table className="min-w-full border border-slate-200 rounded text-xs mb-2">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="px-2 py-2">#</th>
-                <th className="px-2 py-2 text-right">Start</th>
-                <th className="px-2 py-2 text-right">Duration</th>
-                <th className="px-2 py-2 text-right">End</th>
-                <th className="px-2 py-2 text-right">Sq Ft</th>
-                <th className="px-2 py-2 text-right">Dev $/sf</th>
-                <th className="px-2 py-2 text-right">Dev Value</th>
-                <th className="px-2 py-2 text-right">Sales Revenue</th>
-                <th className="px-2 py-2 text-right">Fee ($)</th> {/* New column */}
-              </tr>
-            </thead>
-            <tbody>
-              {tektraPlan.map((h, i) => {
-                const fee = (h.estimatedDevelopmentValue * (tektraGlobals.gcFeePercent / 100));
-                return (
-                  <tr key={h.id} className="border-t border-slate-100">
-                    <td className="px-2 py-2">{i + 1}</td>
-                    <td className="px-2 py-2 text-right">{h.startMonth}</td>
-                    <td className="px-2 py-2 text-right">{h.duration}</td>
-                    <td className="px-2 py-2 text-right">{h.endMonth}</td>
-                    <td className="px-2 py-2 text-right">{h.projectSqFt.toLocaleString()}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(h.devCostPerSqFt)}</td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(h.estimatedDevelopmentValue)}</td>
-                    <td className="px-2 py-2 text-right">
-                      {fmtCurrency((h.projectSqFt || 0) * (h.salesPerSqFt || 0) * (h.homesSold || 1))}
-                    </td>
-                    <td className="px-2 py-2 text-right">{fmtCurrency(fee)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-xs mb-0">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="px-2 py-2 sticky top-0 z-10 bg-slate-50">#</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Start</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Duration</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">End</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Sq Ft</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Dev $/sf</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Construction Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Sales Revenue</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-10 bg-slate-50">Fee ($)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tektraPlan.map((h, i) => {
+                  const fee = (h.estimatedDevelopmentValue * (tektraGlobals.gcFeePercent / 100));
+                  return (
+                    <tr key={h.id} className="border-t border-slate-100 hover:bg-slate-50/30 transition-colors">
+                      <td className="px-2 py-2">{i + 1}</td>
+                      <td className="px-2 py-2 text-right">{h.startMonth}</td>
+                      <td className="px-2 py-2 text-right">{h.duration}</td>
+                      <td className="px-2 py-2 text-right">{h.endMonth}</td>
+                      <td className="px-2 py-2 text-right">{h.projectSqFt.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(h.devCostPerSqFt)}</td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(h.estimatedDevelopmentValue)}</td>
+                      <td className="px-2 py-2 text-right">
+                        {fmtCurrency((h.projectSqFt || 0) * (h.salesPerSqFt || 0) * (h.homesSold || 1))}
+                      </td>
+                      <td className="px-2 py-2 text-right">{fmtCurrency(fee)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <div className="text-[11px] text-slate-500">
-            TEKTRA interval ≈ {stickGlobals.stickPhaseInterval} × ({tektraGlobals.tektraDurationMonths}/{stickGlobals.stickDurationMonths}) = <b>{tektraPhaseInterval}</b> mo (min 1), under the same {tektraGlobals.wipCapHomes}-home cap.
+            TEKTRA interval set to <b>{tektraPhaseInterval}</b> mo (independent), under the same {tektraGlobals.wipCapHomes}-home cap.
           </div>
         </div>
 
@@ -1206,11 +1137,11 @@ export default function SavingsCalculator() {
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-slate-500">Total Year‑1 Opportunity (All‑in)</div>
+              <div className="text-xs text-slate-500">Total Year‑1 Opportunity</div>
               <div className="text-2xl font-semibold">{fmtCurrency(annualOpportunity)}</div>
             </div>
             <div className="text-sm text-slate-600">
-              <div>Δ Dev Value: <span className="font-medium">{fmtCurrency(incrementalDevValue)}</span></div>
+              <div>Δ Construction Revenue: <span className="font-medium">{fmtCurrency(incrementalDevValue)}</span></div>
               <div>Δ Fee Profit: <span className="font-medium">{fmtCurrency(incrementalFee)}</span></div>
               <div>Δ Sales @ Close: <span className="font-medium">{fmtCurrency(incrementalSales)}</span></div>
               <div>Carry Savings: <span className="font-medium" style={{ color: BRAND.accent }}>{fmtCurrency(carrySavings)}</span></div>
@@ -1321,6 +1252,7 @@ export default function SavingsCalculator() {
         tektraTotalCost,
         durationDiffMonths,
         durationDiffDays,
+        clientGcFee,
       };
     }
 
@@ -1336,229 +1268,246 @@ export default function SavingsCalculator() {
            <div className="bg-white shadow-md rounded-lg p-6">
         <h2 className="text-lg font-medium text-slate-800 mb-4">Cost Analysis</h2>
         <div className="mb-2 text-sm text-slate-600">
-          <b>Stick Built Duration:</b> <input
-            type="number"
-            value={costData.stickDurationMonths}
-            min={1}
-            onChange={e => setCostData(prev => ({ ...prev, stickDurationMonths: Number(e.target.value) }))}
-            className="border border-slate-300 rounded px-2 py-1 text-sm w-16 text-right mr-2"
-          /> months
-          <b className="ml-4">TEKTRA Duration:</b> <input
-            type="number"
-            value={costData.tektraDurationMonths}
-            min={1}
-            onChange={e => setCostData(prev => ({ ...prev, tektraDurationMonths: Number(e.target.value) }))}
-            className="border border-slate-300 rounded px-2 py-1 text-sm w-16 text-right mr-2"
-          /> months
+          <b>Stick Built Duration:</b>
+          <span className="inline-flex items-center border rounded px-2 py-1 bg-slate-50 ml-1 mr-2">
+            <input
+              type="number"
+              value={costData.stickDurationMonths}
+              min={1}
+              onChange={e => setCostData(prev => ({ ...prev, stickDurationMonths: Number(e.target.value) }))}
+              className="w-16 bg-transparent border-none text-sm text-right focus:ring-0"
+              aria-label="stick duration months"
+            />
+          </span>
+          months
+          <b className="ml-4">TEKTRA Duration:</b>
+          <span className="inline-flex items-center border rounded px-2 py-1 bg-slate-50 ml-1 mr-2">
+            <input
+              type="number"
+              value={costData.tektraDurationMonths}
+              min={1}
+              onChange={e => setCostData(prev => ({ ...prev, tektraDurationMonths: Number(e.target.value) }))}
+              className="w-16 bg-transparent border-none text-sm text-right focus:ring-0"
+              aria-label="tektra duration months"
+            />
+          </span>
+          months
           <span className="ml-4 text-xs text-slate-500">Duration difference: <b>{calculations.durationDiffMonths}</b> months / <b>{calculations.durationDiffDays.toFixed(0)}</b> days</span>
         </div>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left py-3 px-2 text-sm font-medium text-slate-600">Cost Element</th>
-              <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Unit Cost</th>
-              <th className="text-right py-3 px-2 text-sm font-medium text-slate-600 bg-slate-50">Stick Built</th>
-              <th className="text-right py-3 px-2 text-sm font-medium text-slate-600 bg-blue-50">TEKTRA</th>
-              <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Difference</th>
-              <th className="text-right py-3 px-2 text-sm font-medium text-slate-600">Badge</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {/* Division 1 Costs */}
-            {division1CostCategories.map((category) => {
-             
-              const stickBuiltDailyCost = Number(costData[category.key as keyof typeof costData]) || 0;
-              // Use durationDiffDays for total cost calculation
-              const stickBuiltCost = stickBuiltDailyCost * calculations.durationDiffDays;
-              const tektraCost = 0;
-              const diff = tektraCost - stickBuiltCost;
-              const badge = diff < 0
-                ? <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-semibold">Savings</span>
-                : diff > 0
-                  ? <span className="inline-block px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Extra Cost</span>
-                  : <span className="inline-block px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">No Change</span>;
-
-              return (
-                <tr key={category.key} className="hover:bg-slate-50/30 transition-colors">
-                  <td className="py-3 px-2">
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{category.label}</div>
-                      <div className="text-xs text-slate-500">{category.description}</div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm">
-                    <div className="flex items-center justify-end">
-                      {(() => {
-                        const v = costData[category.key as keyof typeof costData];
-                        const valueForInput: number | '' = typeof v === 'number' ? v : '';
-
-                        return (
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            value={valueForInput}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/[^0-9.]/g, '');
-                              setCostData(prev => ({
-                                ...prev,
-                                [category.key]: raw === '' ? 0 : Number(raw), // or keep ''/undefined if your model allows
-                              }));
-                            }}
-                            className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                          />
-                        );
-                      })()}
-                      <span className="ml-2 text-xs text-slate-500">/day</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
-                    {formatCurrency(stickBuiltCost)}
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-600">
-                    {formatCurrency(tektraCost)}
-                  </td>
-                  <td className={`py-3 px-2 text-right text-sm ${diff < 0 ? 'text-green-600' : diff > 0 ? 'text-red-600' : 'text-slate-600'}`}>
-                    {diff < 0 ? `-${formatCurrency(Math.abs(diff))}` : diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(0)}
-                  </td>
-                  <td className="py-3 px-2 text-right">{badge}</td>
-                </tr>
-              );
-            })}
-
-            {/* Primary Construction Costs */}
-            {primaryCostElements.map((element, idx) => {
-              const stickBuiltCost = element.rate * totalSqFt;
-              // Make rate editable
-              const tektraCost = 0;
-              const diff = tektraCost - stickBuiltCost;
-              const badge = diff < 0
-                ? <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-semibold">Savings</span>
-                : diff > 0
-                  ? <span className="inline-block px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Extra Cost</span>
-                  : <span className="inline-block px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">No Change</span>;
-
-              return (
-                <tr key={element.key} className="hover:bg-slate-50/30 transition-colors">
-                  <td className="py-3 px-2">
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{element.label}</div>
-                      <div className="text-xs text-slate-500">{element.description}</div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm">
-                    <div className="flex items-center justify-end">
-                      <input
-                        type="number"
-                        value={costData.primaryCostElements[idx].rate}
-                        onChange={(e) => {
-                          const rawValue = e.target.value.replace(/[^0-9.]/g, '');
-                          setCostData(prev => ({
-                            ...prev,
-                            primaryCostElements: prev.primaryCostElements.map((el, i) =>
-                              i === idx
-                                ? { ...el, rate: Number(rawValue) }
-                                : el
-                            )
-                          }));
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                      />
-                      <span className="ml-2 text-xs text-slate-500">{element.unit}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
-                    {formatCurrency(stickBuiltCost)}
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-700 font-bold">
-                    {formatCurrency(tektraCost)}
-                  </td>
-                  <td className={`py-3 px-2 text-right text-sm ${diff < 0 ? 'text-green-600' : diff > 0 ? 'text-red-600' : 'text-slate-600'}`}>
-                    {diff < 0 ? `-${formatCurrency(Math.abs(diff))}` : diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(0)}
-                  </td>
-                  <td className="py-3 px-2 text-right">{badge}</td>
-                </tr>
-              );
-            })}
-
-            {/* GC Fee */}
-            <tr className="hover:bg-slate-50/30 transition-colors">
-              <td className="py-3 px-2">
-                <div>
-                  <div className="text-sm font-medium text-slate-800">GC Fee</div>
-                  <div className="text-xs text-slate-500">Calculated based on total construction costs</div>
-                </div>
-              </td>
-              <td className="py-3 px-2 text-right text-sm">
-                <input
-                  type="number"
-                  value={costData.gcFeePercent || ''}
-                  onChange={(e) => setCostData(prev => ({ ...prev, gcFeePercent: Number(e.target.value) }))}
-                  className="w-full border border-slate-300 rounded px-2 py-1 text-sm text-right focus:border-blue-500 focus:ring-0"
-                  placeholder="Enter fee percentage"
-                  min="0"
-                  max="100"
-                />
-              </td>
-              <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
-                {formatCurrency(calculations.traditionalTotalCost * (costData.gcFeePercent / 100) || 0)}
-              </td>
-              <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-600">
-                {formatCurrency(calculations.tektraTotalCost * (costData.gcFeePercent / 100) || 0)}
-              </td>
-              <td className={`py-3 px-2 text-right text-sm ${calculations.tektraTotalCost < calculations.traditionalTotalCost ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(Math.abs(calculations.traditionalTotalCost - calculations.tektraTotalCost))}
-              </td>
-              <td className="py-3 px-2 text-right">
-                {calculations.tektraTotalCost < calculations.traditionalTotalCost
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm mb-0">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="text-left py-3 px-2 font-medium text-slate-600 sticky top-0 z-10 bg-slate-50">Cost Element</th>
+                <th className="text-right py-3 px-2 font-medium text-slate-600 sticky top-0 z-10 bg-slate-50">Unit Cost</th>
+                <th className="text-right py-3 px-2 font-medium text-slate-600 bg-slate-50 sticky top-0 z-10">Stick Built</th>
+                <th className="text-right py-3 px-2 font-medium text-slate-600 bg-blue-50 sticky top-0 z-10">TEKTRA</th>
+                <th className="text-right py-3 px-2 font-medium text-slate-600 sticky top-0 z-10 bg-slate-50">Difference</th>
+                <th className="text-right py-3 px-2 font-medium text-slate-600 sticky top-0 z-10 bg-slate-50">Badge</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {/* Division 1 Costs */}
+              {division1CostCategories.map((category) => {
+               
+                const stickBuiltDailyCost = Number(costData[category.key as keyof typeof costData]) || 0;
+                // Use durationDiffDays for total cost calculation
+                const stickBuiltCost = stickBuiltDailyCost * calculations.durationDiffDays;
+                const tektraCost = 0;
+                const diff = tektraCost - stickBuiltCost;
+                const badge = diff < 0
                   ? <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-semibold">Savings</span>
-                  : <span className="inline-block px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Extra Cost</span>
-                }
-              </td>
-            </tr>
+                  : diff > 0
+                    ? <span className="inline-block px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Extra Cost</span>
+                    : <span className="inline-block px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">No Change</span>;
 
-            {/* TEKTRA Package Line */}
-            <tr className="hover:bg-blue-50/30 transition-colors font-semibold">
-              <td className="py-3 px-2">
-                <div>
-                  <div className="text-sm font-bold text-blue-800">TEKTRA Package</div>
-                  <div className="text-xs text-blue-600">All primary construction costs included</div>
-                </div>
-              </td>
-              <td className="py-3 px-2 text-right text-sm">
-                <span className="text-blue-700 font-bold"></span>
-              </td>
-              <td className="py-3 px-2 text-right text-sm bg-slate-50 text-slate-400">—</td>
-              <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-700 font-bold">
-                {formatCurrency(88 * totalSqFt)}
-              </td>
-              <td className="py-3 px-2 text-right text-blue-700">Included</td>
-              <td className="py-3 px-2 text-right">
-                <span className="inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-semibold">TEKTRA</span>
-              </td>
-            </tr>
+                return (
+                  <tr key={category.key} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="py-3 px-2">
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">{category.label}</div>
+                        <div className="text-xs text-slate-500">{category.description}</div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm">
+                      <div className="flex items-center justify-end border rounded px-2 py-1 bg-slate-50">
+                        {(() => {
+                          const v = costData[category.key as keyof typeof costData];
+                          const valueForInput: number | '' = typeof v === 'number' ? v : '';
 
-            {/* Summary Row */}
-            <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-lg">
-              <td className="py-6 px-2 text-slate-800">Total Project Cost</td>
-              <td className="py-6 px-2 text-right text-slate-400">N/A</td>
-              <td className="py-6 px-2 text-right text-red-600 bg-slate-50">
-                {formatCurrency(calculations.traditionalTotalCost || 0)}
-              </td>
-              <td className="py-6 px-2 text-right text-blue-600 bg-blue-50">
-                {formatCurrency(calculations.tektraTotalCost || 0)}
-              </td>
-              <td className={`py-6 px-2 text-right text-xl ${calculations.totalSavings > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                {formatCurrency(calculations.traditionalTotalCost - calculations.tektraTotalCost)}
-              </td>
-              <td className="py-6 px-2 text-right">
-                {calculations.totalSavings > 0
-                  ? <span className="inline-block px-3 py-2 rounded bg-green-100 text-green-700 text-sm font-bold">Portfolio Savings</span>
-                  : <span className="inline-block px-3 py-2 rounded bg-red-100 text-red-700 text-sm font-bold">Portfolio Extra Cost</span>
-                }
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                          return (
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={valueForInput}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^0-9.]/g, '');
+                                setCostData(prev => ({
+                                  ...prev,
+                                  [category.key]: raw === '' ? 0 : Number(raw),
+                                }));
+                              }}
+                              className="w-full bg-transparent border-none text-sm text-right focus:ring-0"
+                              aria-label={`${category.label} daily cost`}
+                            />
+                          );
+                        })()}
+                        <span className="ml-2 text-xs text-slate-500">/day</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
+                      {formatCurrency(stickBuiltCost)}
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-600">
+                      {formatCurrency(tektraCost)}
+                    </td>
+                    <td className={`py-3 px-2 text-right text-sm ${diff < 0 ? 'text-green-600' : diff > 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                      {diff < 0 ? `-${formatCurrency(Math.abs(diff))}` : diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(0)}
+                    </td>
+                    <td className="py-3 px-2 text-right">{badge}</td>
+                  </tr>
+                );
+              })}
+
+              {/* Primary Construction Costs */}
+              {costData.primaryCostElements.map((element, idx) => {
+                const stickBuiltCost = (element.rate || 0) * totalSqFt;
+                const tektraCost = 0;
+                const diff = tektraCost - stickBuiltCost;
+                const badge = diff < 0
+                  ? <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-semibold">Savings</span>
+                  : diff > 0
+                    ? <span className="inline-block px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Extra Cost</span>
+                    : <span className="inline-block px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">No Change</span>;
+
+                return (
+                  <tr key={element.key} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="py-3 px-2">
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">{element.label}</div>
+                        <div className="text-xs text-slate-500">{element.description}</div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm">
+                      <div className="flex items-center justify-end border rounded px-2 py-1 bg-slate-50">
+                        <input
+                          type="number"
+                          value={costData.primaryCostElements[idx].rate}
+                          onChange={(e) => {
+                            const rawValue = e.target.value.replace(/[^0-9.]/g, '');
+                            setCostData(prev => ({
+                              ...prev,
+                              primaryCostElements: prev.primaryCostElements.map((el, i) =>
+                                i === idx
+                                  ? { ...el, rate: Number(rawValue) }
+                                  : el
+                              )
+                            }));
+                          }}
+                          className="w-full bg-transparent border-none text-sm text-right focus:ring-0"
+                          aria-label={`${element.label} unit rate`}
+                        />
+                        <span className="ml-2 text-xs text-slate-500">{element.unit}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
+                      {formatCurrency(stickBuiltCost)}
+                    </td>
+                    <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-700 font-bold">
+                      {formatCurrency(tektraCost)}
+                    </td>
+                    <td className={`py-3 px-2 text-right text-sm ${diff < 0 ? 'text-green-600' : diff > 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                      {diff < 0 ? `-${formatCurrency(Math.abs(diff))}` : diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(0)}
+                    </td>
+                    <td className="py-3 px-2 text-right">{badge}</td>
+                  </tr>
+                );
+              })}
+
+              {/* GC Fee */}
+              <tr className="hover:bg-slate-50/30 transition-colors">
+                <td className="py-3 px-2">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">GC Fee</div>
+                    <div className="text-xs text-slate-500">Calculated on primary construction + Division 1</div>
+                  </div>
+                </td>
+                <td className="py-3 px-2 text-right text-sm">
+                  <div className="flex items-center justify-end border rounded px-2 py-1 bg-slate-50">
+                    <input
+                      type="number"
+                      value={costData.gcFeePercent || ''}
+                      onChange={(e) => setCostData(prev => ({ ...prev, gcFeePercent: Number(e.target.value) }))}
+                      className="w-full bg-transparent border-none text-sm text-right focus:ring-0"
+                      placeholder="Enter fee percentage"
+                      min="0"
+                      max="100"
+                      aria-label="gc fee percent"
+                    />
+                    <span className="ml-2 text-xs text-slate-500">%</span>
+                  </div>
+                </td>
+                <td className="py-3 px-2 text-right text-sm bg-slate-50 text-red-600">
+                  {formatCurrency(calculations.clientGcFee || 0)}
+                </td>
+                <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-600">
+                  {formatCurrency(0)}
+                </td>
+                <td className={`py-3 px-2 text-right text-sm ${calculations.clientGcFee > 0 ? 'text-green-600' : 'text-slate-600'}`}>
+                  {calculations.clientGcFee > 0 ? `-${formatCurrency(Math.abs(calculations.clientGcFee))}` : formatCurrency(0)}
+                </td>
+                <td className="py-3 px-2 text-right">
+                  {calculations.clientGcFee > 0
+                    ? <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-semibold">Savings</span>
+                    : <span className="inline-block px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">No Change</span>
+                  }
+                </td>
+              </tr>
+
+              {/* TEKTRA Package Line */}
+              <tr className="hover:bg-blue-50/30 transition-colors font-semibold">
+                <td className="py-3 px-2">
+                  <div>
+                    <div className="text-sm font-bold text-blue-800">TEKTRA Package</div>
+                    <div className="text-xs text-blue-600">All primary construction costs included</div>
+                  </div>
+                </td>
+                <td className="py-3 px-2 text-right text-sm">
+                  <span className="text-blue-700 font-bold"></span>
+                </td>
+                <td className="py-3 px-2 text-right text-sm bg-slate-50 text-slate-400">—</td>
+                <td className="py-3 px-2 text-right text-sm bg-blue-50 text-blue-700 font-bold">
+                  {formatCurrency(88 * totalSqFt)}
+                </td>
+                <td className="py-3 px-2 text-right text-blue-700">Included</td>
+                <td className="py-3 px-2 text-right">
+                  <span className="inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-semibold">TEKTRA</span>
+                </td>
+              </tr>
+
+              {/* Summary Row */}
+              <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-lg">
+                <td className="py-6 px-2 text-slate-800">Total Project Cost</td>
+                <td className="py-6 px-2 text-right text-slate-400">N/A</td>
+                <td className="py-6 px-2 text-right text-red-600 bg-slate-50">
+                  {formatCurrency(calculations.traditionalTotalCost || 0)}
+                </td>
+                <td className="py-6 px-2 text-right text-blue-600 bg-blue-50">
+                  {formatCurrency(calculations.tektraTotalCost || 0)}
+                </td>
+                <td className={`py-6 px-2 text-right text-xl ${calculations.totalSavings > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {formatCurrency(calculations.traditionalTotalCost - calculations.tektraTotalCost)}
+                </td>
+                <td className="py-6 px-2 text-right">
+                  {calculations.totalSavings > 0
+                    ? <span className="inline-block px-3 py-2 rounded bg-green-100 text-green-700 text-sm font-bold">Portfolio Savings</span>
+                    : <span className="inline-block px-3 py-2 rounded bg-red-100 text-red-700 text-sm font-bold">Portfolio Extra Cost</span>
+                  }
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -1596,6 +1545,32 @@ export default function SavingsCalculator() {
       </div>
       {/* Tabs and Views */}
       <div className="max-w-7xl mx-auto px-4 pb-12">
+        {/* Shared KPI strip visible across all tabs */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+          <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-500">Total Year‑1 Opportunity</div>
+            <div className="text-2xl font-semibold" style={{ color: BRAND.accent }}>{fmtCurrency(annualOpportunity)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Δ Dev + Δ Sales (Totals exclude Fee & Carry)</div>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-500">Additional Completions (Year‑1)</div>
+            <div className="text-2xl font-semibold">{additionalCompletions}</div>
+            <div className="text-[10px] text-slate-500 mt-1">TEKTRA vs Stick under same WIP cap</div>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-500">Δ Construction Revenue</div>
+            <div className="text-2xl font-semibold">{fmtCurrency(incrementalDevValue)}</div>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-500">Δ Sales @ Close</div>
+            <div className="text-2xl font-semibold">{fmtCurrency(incrementalSales)}</div>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-500">Δ Fee Profit</div>
+            <div className="text-2xl font-semibold">{fmtCurrency(incrementalFee)}</div>
+          </div>
+        </div>
+        {/* Tab navigation and content */}
         <Tabs
           value={activeTab}
           onChange={tab => setActiveTab(tab as 'dashboard'|'projects'|'costs')}
