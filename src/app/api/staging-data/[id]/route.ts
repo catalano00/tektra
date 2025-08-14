@@ -11,40 +11,34 @@ function resolveId(req: NextRequest, params?: { id?: string }): string | undefin
   return parts[parts.length - 1];
 }
 
-// Next.js Route Handler expects (req: NextRequest)
-export async function GET(req: NextRequest, context: { params: { id: string } }) {
+// GET staging data by id (dynamic segment). Context typing relaxed to avoid build errors.
+export async function GET(req: NextRequest, { params }: { params: { id?: string } }) {
   try {
-    const id = resolveId(req, context?.params);
-    if (!id) {
-      return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
-    }
+    const id = resolveId(req, params);
+    if (!id) return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
 
-    // Fetch the staging data by ID
-    const stagingData = await prisma.stagingData.findUnique({
-      where: { id },
-    });
+    const stagingData = await prisma.stagingData.findUnique({ where: { id } });
+    if (!stagingData) return NextResponse.json({ error: 'Data not found' }, { status: 404 });
 
-    if (!stagingData) {
-      return new NextResponse(JSON.stringify({ error: 'Data not found' }), { status: 404 });
-    }
-
-    return new NextResponse(JSON.stringify(stagingData), { status: 200 });
+    return NextResponse.json(stagingData);
   } catch (error) {
     console.error('Error fetching staging data:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new NextResponse(JSON.stringify({ error: errorMessage }), { status: 500 });
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
-export async function PUT(req: NextRequest, context: { params: { id: string } }) {
+// Update staging data (rawData + status)
+export async function PUT(req: NextRequest, { params }: { params: { id?: string } }) {
   try {
-    const id = resolveId(req, context?.params);
-    if (!id) {
-      return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
-    }
-    const body = await req.json();
+    const id = resolveId(req, params);
+    if (!id) return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
 
-    // Update the staging data
+    const body = await req.json().catch(() => ({}));
+    if (body.rawData === undefined) {
+      return NextResponse.json({ error: 'rawData is required' }, { status: 400 });
+    }
+
     const updatedData = await prisma.stagingData.update({
       where: { id },
       data: {
@@ -53,13 +47,13 @@ export async function PUT(req: NextRequest, context: { params: { id: string } })
       },
     });
 
-    return new NextResponse(JSON.stringify(updatedData), { status: 200 });
-  } catch (error) {
+    return NextResponse.json(updatedData);
+  } catch (error: any) {
     console.error('Error updating staging data:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    if ((error as any)?.code === 'P2025') { // Prisma record not found
+    if (error?.code === 'P2025') {
       return NextResponse.json({ error: 'Data not found' }, { status: 404 });
     }
-    return new NextResponse(JSON.stringify({ error: errorMessage }), { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
