@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // Ensure Prisma is properly configured
 
+// Helper to extract the id from dynamic route params or fallback query/path
+function resolveId(req: NextRequest, params?: { id?: string }): string | undefined {
+  if (params?.id) return params.id; // preferred: dynamic segment
+  const qp = req.nextUrl.searchParams.get('id');
+  if (qp) return qp;
+  // Fallback: last path segment
+  const parts = req.nextUrl.pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1];
+}
+
 // Next.js Route Handler expects (req: NextRequest)
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest, context: { params: { id: string } }) {
   try {
-    let id = req.nextUrl.searchParams.get('id') ?? undefined;
-    // If using dynamic route, extract id from pathname:
-    // const id = req.nextUrl.pathname.split('/').pop();
-    // id will be either string or undefined
+    const id = resolveId(req, context?.params);
+    if (!id) {
+      return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
+    }
 
     // Fetch the staging data by ID
     const stagingData = await prisma.stagingData.findUnique({
@@ -26,9 +36,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PUT(req: NextRequest) {
+export async function PUT(req: NextRequest, context: { params: { id: string } }) {
   try {
-    const id = req.nextUrl.searchParams.get('id') ?? undefined;
+    const id = resolveId(req, context?.params);
+    if (!id) {
+      return NextResponse.json({ error: 'Missing id parameter' }, { status: 400 });
+    }
     const body = await req.json();
 
     // Update the staging data
@@ -44,6 +57,9 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     console.error('Error updating staging data:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if ((error as any)?.code === 'P2025') { // Prisma record not found
+      return NextResponse.json({ error: 'Data not found' }, { status: 404 });
+    }
     return new NextResponse(JSON.stringify({ error: errorMessage }), { status: 500 });
   }
 }

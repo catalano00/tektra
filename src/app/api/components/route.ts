@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
       include: {
         part: true,
         sheathing: true,
+        connectors: true,
+        framingTL: true,
         timeEntries: true,
       },
     });

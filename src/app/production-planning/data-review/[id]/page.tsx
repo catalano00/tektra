@@ -285,6 +285,17 @@ export default function FileDetailsPage() {
   const [showSectionMenu, setShowSectionMenu] = useState(false); // For section dropdown
   const sectionMenuRef = useRef<HTMLDivElement>(null); // For click outside
   const [originalMediaLink, setOriginalMediaLink] = useState<string>(''); // Store original media link
+  const [showReprocessConfirm, setShowReprocessConfirm] = useState(false);
+  const [reprocessPreview, setReprocessPreview] = useState<any>(null);
+  const [preReprocessSnapshot, setPreReprocessSnapshot] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  // Toast notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const pushToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Click outside to close section menu
   useEffect(() => {
@@ -319,6 +330,20 @@ export default function FileDetailsPage() {
     return () => window.removeEventListener('resize', updateScreenWidth);
   }, []);
 
+  const TAG_SECTION_MAP: Record<string, string> = {
+    rpsheathing: 'RPSheathing',
+    rppartlist: 'RPPartList',
+    fpconnectors: 'FPConnectors',
+    fppartlist: 'FPPartList',
+    fpsheathing: 'FPSheathing',
+    wpconnectors: 'WPConnectors',
+    wpframingtl: 'WPFramingTL',
+    wppartlist: 'WPPartList',
+    wpsheathing: 'WPSheathing',
+  };
+  // Map of raw (lowercase) array keys -> canonical section keys (used for initial normalization & reprocess)
+  const RAW_SECTION_KEY_MAP = TAG_SECTION_MAP; // identical mapping presently
+
   useEffect(() => {
     async function fetchFileData() {
       try {
@@ -329,6 +354,19 @@ export default function FileDetailsPage() {
         const data = await response.json();
         setFileData(data);
         setEditableData(data.rawData);
+        // Normalize any lowercase panel arrays to canonical capitalized section keys so UI can render them
+        setEditableData((prev: any) => {
+          if (!prev || typeof prev !== 'object') return prev;
+          const next = { ...prev };
+          Object.entries(RAW_SECTION_KEY_MAP).forEach(([rawKey, canonical]) => {
+            if ((next as any)[rawKey] && Array.isArray((next as any)[rawKey])) {
+              if (!(next as any)[canonical]) {
+                (next as any)[canonical] = (next as any)[rawKey];
+              }
+            }
+          });
+          return next;
+        });
         // Store the original media link to prevent corruption
         if (data.rawData && data.rawData.media_link) {
           setOriginalMediaLink(data.rawData.media_link);
@@ -391,24 +429,116 @@ export default function FileDetailsPage() {
 
   const componentDetails = ['projectnametag','panellabel', 'sheettitle' ];
 
-  const renamedSections: Record<string, string> = {
-    framingtl: 'Framing Total Length',
-    timestamps: 'Time Stamps',
-    assemblypartlist: 'Assembly Part List',
-    sheathing: 'Sheathing',
+  // New panel/tag based sections mapping to their display titles & column schemas.
+  // We reuse generic key_0.. key_n fields already used by existing parser output.
+  const panelSectionConfigs: Record<string, { title: string; columns: { key: string; label: string; type?: string }[] }> = {
+    RPSheathing: {
+      title: 'Roof Panel – Sheathing',
+      columns: [
+        { key: 'key_0', label: 'Description' },
+        { key: 'key_1', label: 'Thickness' },
+        { key: 'key_2', label: 'Area' },
+      ],
+    },
+    RPPartList: {
+      title: 'Roof Panel – Part List',
+      columns: [
+        { key: 'key_0', label: 'Type' },
+        { key: 'key_1', label: 'Label' },
+        { key: 'key_2', label: 'Cut Length' },
+        { key: 'key_3', label: 'Count' },
+      ],
+    },
+    FPConnectors: {
+      title: 'Floor Panel – Connectors',
+      columns: [
+        { key: 'key_0', label: 'Label' },
+        { key: 'key_1', label: 'Description' },
+        { key: 'key_2', label: 'Count' },
+      ],
+    },
+    FPPartList: {
+      title: 'Floor Panel – Part List',
+      columns: [
+        { key: 'key_0', label: 'Type' },
+        { key: 'key_1', label: 'Label' },
+        { key: 'key_2', label: 'Cut Length' },
+        { key: 'key_3', label: 'Count' },
+      ],
+    },
+    FPSheathing: {
+      title: 'Floor Panel – Sheathing',
+      columns: [
+        { key: 'key_0', label: 'Description' },
+        { key: 'key_1', label: 'Area' },
+        { key: 'key_2', label: '4x8 Panel Count' },
+      ],
+    },
+    WPConnectors: {
+      title: 'Wall Panel – Connectors',
+      columns: [
+        { key: 'key_0', label: 'Label' },
+        { key: 'key_1', label: 'Count' },
+      ],
+    },
+    WPFramingTL: {
+      title: 'Wall Panel – Framing Total Length',
+      columns: [
+        { key: 'key_0', label: 'Type' },
+        { key: 'key_1', label: 'Total Length' },
+        { key: 'key_2', label: 'Count' },
+      ],
+    },
+    WPPartList: {
+      title: 'Wall Panel – Part List',
+      columns: [
+        { key: 'key_0', label: 'Size' },
+        { key: 'key_1', label: 'Label' },
+        { key: 'key_2', label: 'Count' },
+        { key: 'key_3', label: 'Cut Length' },
+      ],
+    },
+    WPSheathing: {
+      title: 'Wall Panel – Sheathing',
+      columns: [
+        { key: 'key_0', label: 'Panel' },
+        { key: 'key_1', label: 'Area' },
+        { key: 'key_2', label: '4x8 Panel Count' },
+      ],
+    },
+    // Keep timestamps as a special structured list
+    timestamps: {
+      title: 'Time Stamps',
+      columns: [
+        { key: 'key_0', label: 'Date' },
+        { key: 'key_1', label: 'Description' },
+      ],
+    },
   };
 
-  // Available sections that can be added/removed
-  const availableSections = ['assemblypartlist', 'framingtl', 'sheathing', 'timestamps'];
+  // Order of display for all sections (core sections first)
+  const sectionOrder = [
+    'documentProperties',
+    'componentDetails',
+    'RPSheathing',
+    'RPPartList',
+    'FPConnectors',
+    'FPPartList',
+    'FPSheathing',
+    'WPConnectors',
+    'WPFramingTL',
+    'WPPartList',
+    'WPSheathing',
+    'timestamps',
+  ];
 
-  const sectionOrder = ['documentProperties', 'componentDetails', 'assemblypartlist', 'framingtl', 'sheathing', 'timestamps'];
+  // Allow adding any panel section that is not present
+  const availableSections = Object.keys(panelSectionConfigs).filter(k => k !== 'timestamps');
 
   // Section management functions
   const addSection = (sectionName: string) => {
-    setEditableData((prev: any) => ({
-      ...prev,
-      [sectionName]: []
-    }));
+    if (!panelSectionConfigs[sectionName]) return;
+    setEditableData((prev: any) => ({ ...prev, [sectionName]: [] }));
     setShowSectionMenu(false);
   };
 
@@ -419,6 +549,168 @@ export default function FileDetailsPage() {
       return updated;
     });
   };
+
+  // Heuristic mapping from incoming tag/panel identifiers to section keys
+  const SECTION_FIELD_HINTS: Record<string, string[]> = {
+    RPSheathing: ['description', 'thickness', 'area'],
+    RPPartList: ['type', 'label', 'cutlength', 'count'],
+    FPConnectors: ['label', 'description', 'count'],
+    FPPartList: ['type', 'label', 'cutlength', 'count'],
+    FPSheathing: ['description', 'area', 'panelcount', '4x8panelcount'],
+    WPConnectors: ['label', 'count'],
+    WPFramingTL: ['type', 'totallength', 'count'],
+    WPPartList: ['size', 'label', 'count', 'cutlength'],
+    WPSheathing: ['panel', 'area', 'panelcount', '4x8panelcount'],
+  };
+
+  function normalizeKey(k: string): string {
+    return k.replace(/[_\s-]/g, '').toLowerCase();
+  }
+
+  function rebuildRow(section: string, record: any) {
+    const hints = SECTION_FIELD_HINTS[section] || [];
+    const normRecord: Record<string, any> = {};
+    Object.entries(record || {}).forEach(([k, v]) => {
+      normRecord[normalizeKey(k)] = v;
+    });
+    const row: any = {};
+    // First try hints
+    hints.forEach((hint, idx) => {
+      if (row[`key_${idx}`] !== undefined) return;
+      const nk = normalizeKey(hint);
+      if (normRecord[nk] !== undefined) {
+        row[`key_${idx}`] = normRecord[nk];
+      }
+    });
+    // Fill remaining slots with leftover fields (excluding tag-like keys and already used)
+    const used = new Set(Object.values(row));
+    let cursor = 0;
+    Object.entries(normRecord).forEach(([k, v]) => {
+      if (['tag','paneltag','section','type','_id','id'].includes(k)) return;
+      if (used.has(v)) return;
+      while (row[`key_${cursor}`] !== undefined) cursor++;
+      row[`key_${cursor}`] = v;
+      used.add(v);
+    });
+    return row;
+  }
+
+  function collectCandidateRecords(root: any): any[] {
+    const acc: any[] = [];
+    const visit = (val: any) => {
+      if (!val) return;
+      if (Array.isArray(val)) {
+        val.forEach(v => visit(v));
+      } else if (typeof val === 'object') {
+        const keys = Object.keys(val);
+        const hasTag = keys.some(k => ['tag','paneltag','section'].includes(k.toLowerCase()));
+        if (hasTag) acc.push(val);
+        // Recurse shallowly to catch nested arrays of tagged objects
+        keys.forEach(k => {
+          const child = (val as any)[k];
+          if (typeof child === 'object') visit(child);
+        });
+      }
+    };
+    visit(root);
+    return acc;
+  }
+
+  function buildReprocessResult(data: any) {
+    const records = collectCandidateRecords(data);
+    const buckets: Record<string, any[]> = {};
+    records.forEach(rec => {
+      const rawTag = rec.tag || rec.panelTag || rec.section || rec.type || '';
+      if (!rawTag) return;
+      const normTag = normalizeKey(String(rawTag));
+      const section = TAG_SECTION_MAP[normTag];
+      if (!section) return; // skip unknown tags
+      const row = rebuildRow(section, rec);
+      if (!buckets[section]) buckets[section] = [];
+      buckets[section].push(row);
+    });
+    // Also harvest already structured arrays sitting on raw data (e.g., rppartlist) that lack per-row tag fields
+    Object.entries(RAW_SECTION_KEY_MAP).forEach(([rawKey, canonical]) => {
+      const arr = (data as any)[rawKey] || (data as any)[canonical];
+      if (Array.isArray(arr) && arr.length) {
+        if (!buckets[canonical]) buckets[canonical] = [];
+        // Push rows (assume they are already in key_0 format); avoid duplicating identical rows
+        const existingSet = new Set(buckets[canonical].map(r => JSON.stringify(r)));
+        arr.forEach((r: any) => {
+          const sig = JSON.stringify(r);
+            if (!existingSet.has(sig)) {
+              buckets[canonical].push(r);
+              existingSet.add(sig);
+            }
+        });
+      }
+    });
+    return { buckets, totalSource: records.length };
+  }
+
+  function openReprocessPreview() {
+    setIsReprocessing(true);
+    try {
+      const { buckets, totalSource } = buildReprocessResult(editableData);
+      const summary = Object.entries(buckets).map(([section, rows]) => ({ section, count: rows.length }));
+      setReprocessPreview({ summary, buckets, totalSource, generatedAt: new Date().toISOString() });
+      setShowReprocessConfirm(true);
+    } finally {
+      setIsReprocessing(false);
+    }
+  }
+
+  function applyReprocess(mode: 'overwrite' | 'merge') {
+    if (!reprocessPreview) return;
+    setShowReprocessConfirm(false);
+    setPreReprocessSnapshot(editableData); // backup for undo
+    setEditableData((prev: any) => {
+      const next = { ...prev };
+      Object.entries(reprocessPreview.buckets).forEach(([section, rows]) => {
+        if (mode === 'overwrite' || !Array.isArray(next[section])) {
+          next[section] = rows;
+        } else {
+          // merge unique
+            const existing = new Set(next[section].map((r: any) => JSON.stringify(r)));
+            (rows as any[]).forEach((r: any) => {
+              const s = JSON.stringify(r);
+              if (!existing.has(s)) next[section].push(r);
+            });
+        }
+      });
+      return next;
+    });
+  }
+
+  function undoReprocess() {
+    if (preReprocessSnapshot) {
+      setEditableData(preReprocessSnapshot);
+      setPreReprocessSnapshot(null);
+    }
+  }
+
+  async function saveDraft() {
+    if (!fileData) return;
+    setIsSaving(true);
+    try {
+      const resp = await fetch(`/api/staging-data/${fileData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawData: editableData, status: fileData.status }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to save');
+      }
+      const updated = await resp.json();
+      setFileData(updated);
+      pushToast('Draft saved', 'success');
+    } catch (e: any) {
+      pushToast(`Save failed: ${e.message || e}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -477,52 +769,80 @@ export default function FileDetailsPage() {
             <>
               {/* Section Management Controls */}
               <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
                   <h3 className="text-sm font-semibold text-gray-700">Section Management</h3>
-                  <div className="relative" ref={sectionMenuRef}>
+                  <div className="flex flex-wrap gap-2 items-center">
                     <button
-                      onClick={() => setShowSectionMenu(!showSectionMenu)}
-                      className="flex items-center space-x-1 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                      type="button"
+                      onClick={openReprocessPreview}
+                      disabled={isReprocessing}
+                      className="px-3 py-1.5 rounded-md text-xs font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50"
+                      title="Reconstruct panel sections from raw tagged objects"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      <span>Add Section</span>
+                      {isReprocessing ? 'Scanning…' : 'Reprocess JSON'}
                     </button>
-                    
-                    {showSectionMenu && (
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-white border rounded-lg shadow-lg z-10">
-                        <div className="py-1">
-                          {availableSections
-                            .filter(section => !editableData[section] || !Array.isArray(editableData[section]) || editableData[section].length === 0)
-                            .map(section => (
-                              <button
-                                key={section}
-                                onClick={() => addSection(section)}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                              >
-                                {renamedSections[section] || section}
-                              </button>
-                            ))
-                          }
-                          {availableSections.filter(section => !editableData[section] || !Array.isArray(editableData[section]) || editableData[section].length === 0).length === 0 && (
-                            <div className="px-4 py-2 text-sm text-gray-500 italic">
-                              All sections added
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                    {preReprocessSnapshot && (
+                      <button
+                        type="button"
+                        onClick={undoReprocess}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium bg-gray-300 text-gray-800 hover:bg-gray-400"
+                      >
+                        Undo
+                      </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={saveDraft}
+                      disabled={isSaving}
+                      className="px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      {isSaving ? 'Saving…' : 'Save Draft'}
+                    </button>
+                    <div className="relative" ref={sectionMenuRef}>
+                      <button
+                        onClick={() => setShowSectionMenu(!showSectionMenu)}
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        <span>Add Section</span>
+                      </button>
+                      
+                      {showSectionMenu && (
+                        <div className="absolute right-0 top-full mt-2 w-48 bg-white border rounded-lg shadow-lg z-10">
+                          <div className="py-1">
+                            {availableSections
+                              .filter(section => !editableData[section])
+                              .map(section => (
+                                <button
+                                  key={section}
+                                  onClick={() => addSection(section)}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                >
+                                  {panelSectionConfigs[section]?.title || section}
+                                </button>
+                              ))
+                            }
+                            {availableSections.filter(section => !editableData[section]).length === 0 && (
+                              <div className="px-4 py-2 text-sm text-gray-500 italic">
+                                All sections added
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 
                 {/* Current sections with remove buttons */}
                 <div className="flex flex-wrap gap-2">
                   {availableSections.map(sectionName => (
-                    editableData[sectionName] && Array.isArray(editableData[sectionName]) && editableData[sectionName].length > 0 && (
+                    editableData[sectionName] && (
                       <div key={sectionName} className="flex items-center space-x-1">
                         <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
-                          {renamedSections[sectionName] || sectionName}
+                          {panelSectionConfigs[sectionName]?.title || sectionName}
                         </span>
                         <button
                           onClick={() => removeSection(sectionName)}
@@ -596,133 +916,12 @@ export default function FileDetailsPage() {
                     </div>
                   </CollapsibleSection>
                 );
-              } else if (sectionKey === 'assemblypartlist') {
+              } else if (panelSectionConfigs[sectionKey] && Array.isArray(editableData[sectionKey])) {
+                const cfg = panelSectionConfigs[sectionKey];
                 return (
-                  <CollapsibleSection title="Assembly Part List" defaultOpen key={sectionKey}>
+                  <CollapsibleSection title={cfg.title} defaultOpen key={sectionKey}>
                     <EditableTable
-                      columns={[
-                        { key: 'key_0', label: 'Size' },
-                        { key: 'key_1', label: 'Label' },
-                        { key: 'key_2', label: 'Count' },
-                        { key: 'key_3', label: 'Cut Length' },
-                      ]}
-                      data={editableData[sectionKey] || []}
-                      onChange={(rowIdx, col, val) => {
-                        const updated = editableData[sectionKey].map((row: any, idx: number) =>
-                          idx === rowIdx ? { ...row, [col]: val } : row
-                        );
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                      onAdd={() =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: [...editableData[sectionKey], {}],
-                        })
-                      }
-                      onRemove={(rowIdx) =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: editableData[sectionKey].filter(
-                            (_: any, idx: number) => idx !== rowIdx
-                          ),
-                        })
-                      }
-                      onReorder={(sourceIdx, destinationIdx) => {
-                        const updated = [...editableData[sectionKey]];
-                        const [removed] = updated.splice(sourceIdx, 1);
-                        updated.splice(destinationIdx, 0, removed);
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                    />
-                  </CollapsibleSection>
-                );
-              } else if (sectionKey === 'framingtl') {
-                return (
-                  <CollapsibleSection title="Framing Total Length" defaultOpen key={sectionKey}>
-                    <EditableTable
-                      columns={[
-                        { key: 'key_0', label: 'Type' },
-                        { key: 'key_1', label: 'Total Length' },
-                        { key: 'key_2', label: 'Count' },
-                      ]}
-                      data={editableData[sectionKey] || []}
-                      onChange={(rowIdx, col, val) => {
-                        const updated = editableData[sectionKey].map((row: any, idx: number) =>
-                          idx === rowIdx ? { ...row, [col]: val } : row
-                        );
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                      onAdd={() =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: [...editableData[sectionKey], {}],
-                        })
-                      }
-                      onRemove={(rowIdx) =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: editableData[sectionKey].filter(
-                            (_: any, idx: number) => idx !== rowIdx
-                          ),
-                        })
-                      }
-                      onReorder={(sourceIdx, destinationIdx) => {
-                        const updated = [...editableData[sectionKey]];
-                        const [removed] = updated.splice(sourceIdx, 1);
-                        updated.splice(destinationIdx, 0, removed);
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                    />
-                  </CollapsibleSection>
-                );
-              } else if (sectionKey === 'timestamps') {
-                return (
-                  <CollapsibleSection title="Time Stamps" defaultOpen key={sectionKey}>
-                    <EditableTable
-                      columns={[
-                        { key: 'key_0', label: 'Date' },
-                        { key: 'key_1', label: 'Description' },
-                      ]}
-                      data={editableData[sectionKey] || []}
-                      onChange={(rowIdx, col, val) => {
-                        const updated = editableData[sectionKey].map((row: any, idx: number) =>
-                          idx === rowIdx ? { ...row, [col]: val } : row
-                        );
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                      onAdd={() =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: [...editableData[sectionKey], {}],
-                        })
-                      }
-                      onRemove={(rowIdx) =>
-                        setEditableData({
-                          ...editableData,
-                          [sectionKey]: editableData[sectionKey].filter(
-                            (_: any, idx: number) => idx !== rowIdx
-                          ),
-                        })
-                      }
-                      onReorder={(sourceIdx, destinationIdx) => {
-                        const updated = [...editableData[sectionKey]];
-                        const [removed] = updated.splice(sourceIdx, 1);
-                        updated.splice(destinationIdx, 0, removed);
-                        setEditableData({ ...editableData, [sectionKey]: updated });
-                      }}
-                    />
-                  </CollapsibleSection>
-                );
-              } else if (sectionKey === 'sheathing' && (editableData[sectionKey] && Array.isArray(editableData[sectionKey]))) {
-                return (
-                  <CollapsibleSection title="Sheathing" defaultOpen key={sectionKey}>
-                    <EditableTable
-                      columns={[
-                        { key: 'key_0', label: 'Component Code' },
-                        { key: 'key_1', label: 'Panel Area' },
-                        { key: 'key_2', label: 'Count' },
-                        { key: 'key_3', label: 'Description' },
-                      ]}
+                      columns={cfg.columns as any}
                       data={editableData[sectionKey] || []}
                       onChange={(rowIdx, col, val) => {
                         const updated = editableData[sectionKey].map((row: any, idx: number) =>
@@ -751,58 +950,6 @@ export default function FileDetailsPage() {
                         setEditableData({ ...editableData, [sectionKey]: updated });
                       }}
                     />
-                  </CollapsibleSection>
-                );
-              } else if (editableData[sectionKey]) {
-                return (
-                  <CollapsibleSection title={renamedSections[sectionKey] || sectionKey} defaultOpen key={sectionKey}>
-                    {Array.isArray(editableData[sectionKey]) ? (
-                      <EditableTable
-                        columns={Object.keys(editableData[sectionKey][0] || {}).map((col) => ({
-                          key: col,
-                          label: col,
-                        }))}
-                        data={editableData[sectionKey]}
-                        onChange={(rowIdx, col, val) => {
-                          const updated = editableData[sectionKey].map((row: any, idx: number) =>
-                            idx === rowIdx ? { ...row, [col]: val } : row
-                          );
-                          setEditableData({ ...editableData, [sectionKey]: updated });
-                        }}
-                        onAdd={() =>
-                          setEditableData({
-                            ...editableData,
-                            [sectionKey]: [...editableData[sectionKey], {}],
-                          })
-                        }
-                        onRemove={(rowIdx) =>
-                          setEditableData({
-                            ...editableData,
-                            [sectionKey]: editableData[sectionKey].filter(
-                              (_: any, idx: number) => idx !== rowIdx
-                            ),
-                          })
-                        }
-                        onReorder={(sourceIdx, destinationIdx) => {
-                          const updated = [...editableData[sectionKey]];
-                          const [removed] = updated.splice(sourceIdx, 1);
-                          updated.splice(destinationIdx, 0, removed);
-                          setEditableData({ ...editableData, [sectionKey]: updated });
-                        }}
-                      />
-                    ) : (
-                      <textarea
-                        value={JSON.stringify(editableData[sectionKey], null, 2)}
-                        onChange={(e) =>
-                          setEditableData({
-                            ...editableData,
-                            [sectionKey]: JSON.parse(e.target.value),
-                          })
-                        }
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono"
-                        rows={5}
-                      />
-                    )}
                   </CollapsibleSection>
                 );
               }
@@ -901,11 +1048,11 @@ export default function FileDetailsPage() {
                 }
 
                 const result = await response.json();
-                alert(result.message); // Show success message
+                pushToast(result.message || 'Approved', 'success');
                 router.push('/production-planning/data-review'); // Navigate back to the data review page
               } catch (error) {
                 console.error('Error approving data:', error);
-                alert(`Failed to approve data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                pushToast(`Failed to approve data: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
               }
             }}
           >
@@ -923,14 +1070,75 @@ export default function FileDetailsPage() {
           <button
             type="button"
             className="bg-blue-600 text-white font-semibold px-6 py-2 rounded hover:bg-blue-700 transition"
-            onClick={() => {
-              /* handle save logic */
-            }}
+            disabled={isSaving}
+            onClick={saveDraft}
           >
-            Save
+            {isSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </main>
+      {showReprocessConfirm && reprocessPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Reprocess JSON Preview</h2>
+            {reprocessPreview.summary.length === 0 ? (
+              <p className="text-sm text-gray-600">No tagged records detected. Nothing to apply.</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto border rounded p-3 bg-gray-50">
+                <ul className="text-sm space-y-1">
+                  {reprocessPreview.summary.map((s: any) => (
+                    <li key={s.section} className="flex justify-between">
+                      <span className="font-medium">{panelSectionConfigs[s.section]?.title || s.section}</span>
+                      <span className="text-gray-600">{s.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-gray-500">Detected {reprocessPreview.totalSource} candidate objects with tags. Choose how to apply.</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowReprocessConfirm(false)}
+                className="px-3 py-1.5 text-xs font-medium bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              {reprocessPreview.summary.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyReprocess('merge')}
+                    className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-500"
+                  >
+                    Merge
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyReprocess('overwrite')}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-500"
+                  >
+                    Overwrite
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div
+          className={`fixed bottom-4 right-4 px-4 py-3 rounded shadow-lg text-sm font-medium transition-opacity ${
+            toast.type === 'success'
+              ? 'bg-emerald-600 text-white'
+              : toast.type === 'error'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-800 text-white'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
     </DndProvider>
   );
 }
