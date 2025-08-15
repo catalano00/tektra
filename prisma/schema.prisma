@@ -29,6 +29,8 @@ model Project {
   components                   Component[]
 
   Client         Client   @relation(fields: [clientId], references: [id])
+  componentSchedules          ComponentSchedule[]
+  weekCapacities              ProjectWeekCapacity[]
 
   @@map("projects")
 }
@@ -81,6 +83,9 @@ model Component {
   sheathing        Sheathing?
   connectors       Connectors?
   framingTL        FramingTL?
+  schedule         ComponentSchedule?
+
+  @@unique([projectId, componentId])
 }
 
 model Part {
@@ -183,4 +188,33 @@ model Lead {
   updatedAt   DateTime @updatedAt
 
   Client      Client   @relation(fields: [clientId], references: [id])
+}
+
+model ComponentSchedule {
+  id          String    @id @default(cuid())
+  componentId String    @unique
+  projectId   String
+  weekKey     String    // ISO week key YYYY-Www
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  component   Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  Project     Project   @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@index([weekKey])
+  @@index([projectId, weekKey])
+}
+
+model ProjectWeekCapacity {
+  id           String    @id @default(cuid())
+  projectId    String?
+  weekKey      String
+  capacitySqFt Int
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  Project      Project?  @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@unique([projectId, weekKey])
+  @@index([weekKey])
 }

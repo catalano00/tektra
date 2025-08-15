@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FiEye, FiFileText } from 'react-icons/fi'; // Import icons for better UX
+import { computeOverallScore, badgeColor as sharedBadgeColor } from '@/lib/scoring';
 
 type StagingData = {
   id: string;
@@ -20,6 +21,9 @@ export default function DataReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [screenWidth, setScreenWidth] = useState(0);
   const router = useRouter(); // Use Next.js router for navigation
+  // NEW: component index for duplicate detection
+  const [productionComponents, setProductionComponents] = useState<{ projectId: string; componentId: string }[]>([]);
+  const [duplicateCounts, setDuplicateCounts] = useState<{ total: number; productionConflicts: number }>(() => ({ total: 0, productionConflicts: 0 }));
 
   // Track screen width for responsive design
   useEffect(() => {
@@ -54,7 +58,35 @@ export default function DataReviewPage() {
     }
 
     fetchStagingData();
+    // Fetch production components once
+    fetch('/api/v1/components')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(json => {
+        const comps = (json.components || []).map((c: any) => ({ projectId: c.projectId, componentId: c.componentId }));
+        setProductionComponents(comps);
+      })
+      .catch(() => setProductionComponents([]));
   }, []);
+
+  // Recompute duplicate stats when data or production list changes
+  useEffect(() => {
+    if (!stagingData.length) { setDuplicateCounts({ total: 0, productionConflicts: 0 }); return; }
+    const freq: Record<string, number> = {};
+    stagingData.forEach(sd => {
+      const k = `${sd.rawData?.projectnametag || ''}|${sd.rawData?.panellabel || ''}`;
+      if (!k.includes('|')) return; // skip invalid
+      freq[k] = (freq[k] || 0) + 1;
+    });
+    const prodSet = new Set(productionComponents.map(c => `${c.projectId}|${c.componentId}`));
+    let dupTotal = 0; let prodDup = 0;
+    Object.entries(freq).forEach(([k, count]) => {
+      if (count > 1) dupTotal += count; // count all occurrences involved in duplicates
+      if (prodSet.has(k)) {
+        prodDup += count; // each conflicting staging record
+      }
+    });
+    setDuplicateCounts({ total: dupTotal, productionConflicts: prodDup });
+  }, [stagingData, productionComponents]);
 
   // Filter functions
   const handleFilterByType = (type: string) => {
@@ -201,6 +233,15 @@ export default function DataReviewPage() {
           <span className="text-5xl lg:text-6xl font-bold text-slate-800 font-mono">{totalFiles}</span>
         </div>
 
+        {/* Duplicates Tile */}
+        <div 
+          className={`bg-gradient-to-br from-rose-50 to-rose-100 shadow-lg border border-rose-200 rounded-xl px-6 py-8 flex flex-col items-center ${duplicateCounts.total ? 'animate-pulse ring-2 ring-rose-400 ring-opacity-40' : ''}`}
+        >
+          <span className="text-rose-700 text-base font-semibold mb-2 tracking-wide text-center">Staging Duplicates</span>
+          <span className="text-4xl lg:text-5xl font-bold text-rose-800 font-mono">{duplicateCounts.total}</span>
+          <span className="mt-2 text-xs text-rose-600 font-medium">Prod Conflicts: {duplicateCounts.productionConflicts}</span>
+        </div>
+
         {/* Count by Type Tiles - Consistent Professional Color Scheme */}
         {Object.entries(typeCounts).map(([type, count], index) => {
           // Professional monochromatic blue-gray palette
@@ -316,6 +357,7 @@ export default function DataReviewPage() {
               <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Panel ID</th>
               <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Project Name</th>
               <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Status</th>
+              <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Confidence</th>
               <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Created At</th>
               {screenWidth >= 1920 && (
                 <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Updated At</th>
@@ -327,6 +369,12 @@ export default function DataReviewPage() {
             {filteredData.map((data, index) => {
               const { file_name, sheettitle, panellabel, projectnametag } = data.rawData || {};
               const isEven = index % 2 === 0;
+              const breakdown = computeOverallScore(data.rawData, 'strict');
+              const overallScore = breakdown.overall;
+              const badgeColor = sharedBadgeColor(overallScore);
+              const key = `${projectnametag || ''}|${panellabel || ''}`;
+              const stagingFreq = stagingData.filter(sd => (sd.rawData?.projectnametag === projectnametag && sd.rawData?.panellabel === panellabel)).length;
+              const prodExists = productionComponents.some(pc => pc.projectId === projectnametag && pc.componentId === panellabel);
               return (
                 <tr 
                   key={data.id} 
@@ -346,7 +394,15 @@ export default function DataReviewPage() {
                     </span>
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-slate-600 font-mono text-sm font-medium">
-                    {panellabel || 'Unknown'}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{panellabel || 'Unknown'}</span>
+                      {stagingFreq > 1 && (
+                        <span title={`Appears ${stagingFreq} times in staging data`} className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-semibold">STAGING×{stagingFreq}</span>
+                      )}
+                      {prodExists && (
+                        <span title="Already exists in production components for this project" className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-semibold">PROD DUP</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-slate-700 font-medium">
                     <span className="truncate max-w-xs" title={projectnametag || 'Unknown'}>
@@ -362,6 +418,14 @@ export default function DataReviewPage() {
                         : 'bg-slate-50 text-slate-700 border-slate-200'
                     }`}>
                       {data.status}
+                    </span>
+                  </td>
+                  <td className="px-4 lg:px-6 py-4">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold text-white ${badgeColor}`}
+                      title={`Confidence: ${Math.round(overallScore)}% | Sections present: ${breakdown.presentSections.length} | Missing: ${breakdown.missingSections.length}`}
+                    >
+                      {Math.round(overallScore)}%
                     </span>
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-slate-500 text-sm font-medium">

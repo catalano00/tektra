@@ -56,14 +56,14 @@ function OperatorTimePageInner() {
   const [designBlobUrl, setDesignBlobUrl] = useState<string | null>(null);
   const [designLoadError, setDesignLoadError] = useState<string | null>(null);
   const [designLoading, setDesignLoading] = useState(false);
-  const [zoom, setZoom] = useState(125); // PDF viewer zoom percent
   const [collapseDrawing, setCollapseDrawing] = useState(false);
-
-  // Split panel sizing (dynamic like data-review page)
-  const [leftWidth, setLeftWidth] = useState(700); // initial px width for left panel
+  const [showDrawingModal, setShowDrawingModal] = useState(false);
+  // Removed custom zoom management to use built-in PDF toolbar like data review page
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
+  const [leftWidth, setLeftWidth] = useState<number>(760);
   const [screenWidth, setScreenWidth] = useState(0);
+  const panelHeight = 'calc(100vh - 14rem)';
 
   const panelIdParam = searchParams?.get('componentId') ?? '';
   const projectIdParam = searchParams?.get('projectId') ?? '';
@@ -76,7 +76,7 @@ function OperatorTimePageInner() {
     const updateSW = () => {
       const w = window.innerWidth;
       setScreenWidth(w);
-      setLeftWidth(prev => {
+      setLeftWidth((prev: number) => {
         // If user already resized (flag via data attribute), keep
         if (containerRef.current?.dataset.userResized === 'true') return prev;
         if (w >= 2560) return 900;
@@ -340,155 +340,103 @@ function OperatorTimePageInner() {
 
       {selectedComponent && (
         <div className="w-full" ref={containerRef} style={{ userSelect: isResizing.current ? 'none' : 'auto' }}>
-          <div className="flex items-start gap-0 w-full">
+          <div className="flex w-full gap-0 items-stretch" style={{ height: panelHeight }}>
             {/* LEFT PANEL */}
-            <div className="space-y-6 border rounded bg-white shadow p-4 w-[var(--left-width)]" style={{ width: leftWidth, minWidth: Math.max(420, screenWidth * 0.25), maxWidth: Math.min(1200, screenWidth * 0.7), transition: isResizing.current ? 'none' : 'width .18s ease' }}>
-              <div className="space-y-6 w-full">
-                <div className="flex flex-col lg:flex-row lg:justify-between gap-4">
-                  <div>
-                    <button
-                      onClick={() => router.push('/project-summaries')}
-                      className="text-sm text-blue-600 underline"
-                    >
-                      Change Selection
-                    </button>
-                    <h1 className="text-2xl font-bold">{selectedComponent.projectId}</h1>
-                    <h2 className="text-lg font-bold">{selectedComponent.componentId}</h2>
-                    <p className="text-sm text-gray-600">{selectedComponent.componentType}</p>
-                    <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                      <div className="p-2 bg-gray-50 rounded">
-                        <span className="block font-semibold">Status</span>
-                        <span>{selectedComponent.currentStatus}</span>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded">
-                        <span className="block font-semibold">Process</span>
-                        <span>{process || '—'}</span>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded">
-                        <span className="block font-semibold">Sq Ft</span>
-                        <span>{selectedComponent.componentsqft || '—'}</span>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded">
-                        <span className="block font-semibold">Complete</span>
-                        <span>{selectedComponent.percentComplete}%</span>
-                      </div>
+            <div className="border rounded-l bg-white shadow p-4 flex flex-col overflow-hidden" style={{ width: leftWidth, minWidth: Math.max(420, screenWidth * 0.25), maxWidth: Math.min(1200, screenWidth * 0.7), transition: isResizing.current ? 'none' : 'width .18s ease' }}>
+              {/* Header / Meta */}
+              <div className="mb-4">
+                <button onClick={() => router.push('/project-summaries')} className="text-sm text-blue-600 underline">Change Selection</button>
+                <h1 className="text-xl font-bold mt-1">{selectedComponent.projectId}</h1>
+                <p className="text-xs text-gray-500">{selectedComponent.componentType}</p>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                  {[
+                    { label: 'Status', value: selectedComponent.currentStatus },
+                    { label: 'Process', value: process || '—' },
+                    { label: 'Sq Ft', value: selectedComponent.componentsqft || '—' },
+                    { label: 'Complete', value: `${selectedComponent.percentComplete}%` },
+                  ].map(b => (
+                    <div key={b.label} className="p-2 bg-gray-50 rounded">
+                      <span className="block font-semibold">{b.label}</span>
+                      <span>{b.value}</span>
                     </div>
-                  </div>
+                  ))}
                 </div>
-
-                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {/* Part List */}
-                  <section className="space-y-2">
-                    <h3 className="font-bold text-sm uppercase tracking-wide text-gray-600">Part List</h3>
-                    {selectedComponent.part?.length ? (
-                      <div className="overflow-auto max-h-64 border rounded">
-                        <table className="w-full text-xs">
+              </div>
+              {/* Dynamic Sections */}
+              <div className="flex-1 overflow-auto pr-1 space-y-6">
+                {(() => {
+                  const sections: { key: string; title: string; rows: any[]; columns: { header: string; accessor: string; align?: string }[] }[] = [];
+                  if (selectedComponent.part?.length) sections.push({
+                    key: 'part',
+                    title: 'Part List',
+                    rows: selectedComponent.part,
+                    columns: [
+                      { header: 'Size/Type', accessor: 'size' },
+                      { header: 'Label', accessor: 'label' },
+                      { header: 'Count', accessor: 'count', align: 'right' },
+                      { header: 'Cut Length', accessor: 'cutLength' },
+                    ],
+                  });
+                  if (selectedComponent.sheathing) sections.push({
+                    key: 'sheathing',
+                    title: 'Sheathing',
+                    rows: [selectedComponent.sheathing],
+                    columns: [
+                      { header: 'Code', accessor: 'componentCode' },
+                      { header: 'Panel Area', accessor: 'panelArea' },
+                      { header: 'Count', accessor: 'count', align: 'right' },
+                      { header: 'Description', accessor: 'description' },
+                    ],
+                  });
+                  if (selectedComponent.connectors) sections.push({
+                    key: 'connectors',
+                    title: 'Connectors',
+                    rows: [selectedComponent.connectors],
+                    columns: [
+                      { header: 'Label', accessor: 'label' },
+                      { header: 'Description', accessor: 'description' },
+                      { header: 'Count', accessor: 'count', align: 'right' },
+                    ],
+                  });
+                  if (selectedComponent.framingTL) sections.push({
+                    key: 'framingTL',
+                    title: 'Framing Total Length',
+                    rows: [selectedComponent.framingTL],
+                    columns: [
+                      { header: 'Type', accessor: 'ftype' },
+                      { header: 'Total Length', accessor: 'totalLength' },
+                      { header: 'Count', accessor: 'count', align: 'right' },
+                    ],
+                  });
+                  return sections.map(sec => (
+                    <div key={sec.key} className="space-y-2">
+                      <h3 className="font-bold text-xs uppercase tracking-wide text-gray-600">{sec.title}</h3>
+                      <div className="border rounded overflow-x-auto">{/* removed max-h & internal vertical scroll */}
+                        <table className="w-full text-[11px]">
                           <thead className="bg-gray-100 sticky top-0">
                             <tr>
-                              <th className="p-2 text-left">Size/Type</th>
-                              <th className="p-2 text-left">Label</th>
-                              <th className="p-2 text-right">Count</th>
-                              <th className="p-2 text-left">Cut Length</th>
+                              {sec.columns.map(c => (
+                                <th key={c.accessor} className={`p-2 text-left ${c.align === 'right' ? 'text-right' : ''}`}>{c.header}</th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody>
-                            {selectedComponent.part.map(p => (
-                              <tr key={p.id} className="border-t">
-                                <td className="p-2">{p.size}</td>
-                                <td className="p-2">{p.label}</td>
-                                <td className="p-2 text-right">{p.count}</td>
-                                <td className="p-2">{p.cutLength}</td>
+                            {sec.rows.map((r, idx) => (
+                              <tr key={idx} className="border-t">
+                                {sec.columns.map(c => (
+                                  <td key={c.accessor} className={`p-2 align-top ${c.align === 'right' ? 'text-right' : ''}`}>{(r as any)[c.accessor] ?? '—'}</td>
+                                ))}
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                    ) : (
-                      <p className="text-xs text-gray-500">No parts</p>
-                    )}
-                  </section>
-
-                  {/* Sheathing */}
-                  <section className="space-y-2">
-                    <h3 className="font-bold text-sm uppercase tracking-wide text-gray-600">Sheathing</h3>
-                    {selectedComponent.sheathing ? (
-                      <table className="w-full text-xs border rounded">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="p-2 text-left">Code</th>
-                            <th className="p-2 text-left">Panel Area</th>
-                            <th className="p-2 text-right">Count</th>
-                            <th className="p-2 text-left">Description</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="p-2">{selectedComponent.sheathing.componentCode}</td>
-                            <td className="p-2">{selectedComponent.sheathing.panelArea}</td>
-                            <td className="p-2 text-right">{selectedComponent.sheathing.count}</td>
-                            <td className="p-2">{selectedComponent.sheathing.description || '—'}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-xs text-gray-500">No sheathing</p>
-                    )}
-                  </section>
-
-                  {/* Connectors */}
-                  <section className="space-y-2">
-                    <h3 className="font-bold text-sm uppercase tracking-wide text-gray-600">Connectors</h3>
-                    {selectedComponent.connectors ? (
-                      <table className="w-full text-xs border rounded">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="p-2 text-left">Label</th>
-                            <th className="p-2 text-left">Description</th>
-                            <th className="p-2 text-right">Count</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="p-2">{selectedComponent.connectors.label}</td>
-                            <td className="p-2">{selectedComponent.connectors.description || '—'}</td>
-                            <td className="p-2 text-right">{selectedComponent.connectors.count}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-xs text-gray-500">No connectors</p>
-                    )}
-                  </section>
-
-                  {/* Framing TL */}
-                  <section className="space-y-2">
-                    <h3 className="font-bold text-sm uppercase tracking-wide text-gray-600">Framing Total Length</h3>
-                    {selectedComponent.framingTL ? (
-                      <table className="w-full text-xs border rounded">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="p-2 text-left">Type</th>
-                            <th className="p-2 text-left">Total Length</th>
-                            <th className="p-2 text-right">Count</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="p-2">{selectedComponent.framingTL.ftype}</td>
-                            <td className="p-2">{selectedComponent.framingTL.totalLength}</td>
-                            <td className="p-2 text-right">{selectedComponent.framingTL.count}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-xs text-gray-500">No framing TL</p>
-                    )}
-                  </section>
-                </div>
-
+                    </div>
+                  ));
+                })()}
                 {/* Controls */}
-                <div className="space-y-2">
-                  <h3 className="font-bold text-sm uppercase tracking-wide text-gray-600">Controls</h3>
+                <div className="space-y-2 pt-2 border-t">
+                  <h3 className="font-bold text-xs uppercase tracking-wide text-gray-600">Controls</h3>
                   <select className="border p-2 rounded w-full" value={workstation} onChange={(e) => setWorkstation(e.target.value)}>
                     <option value="">Select Workstation</option>
                     {WORKSTATIONS.map(w => <option key={w} value={w}>{w}</option>)}
@@ -497,69 +445,58 @@ function OperatorTimePageInner() {
                     <option value="">Select Team Lead</option>
                     {TEAM_LEADS.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  <button
-                    onClick={isRunning ? handleStop : () => setIsRunning(true)}
-                    className={`w-full px-6 py-2 text-white rounded ${isRunning ? 'bg-red-600' : 'bg-green-600'} hover:opacity-90`}
-                  >
-                    {isRunning ? 'Stop' : time > 0 ? 'Resume' : 'Start'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* DRAG HANDLE */}
-            <div onMouseDown={handleMouseDown} className="flex items-center justify-center cursor-col-resize select-none hover:bg-gray-300 transition-colors" style={{ width: 14, background: '#e5e7eb', borderLeft: '1px solid #d1d5db', borderRight: '1px solid #d1d5db', height: '100%' }}>
-              <div className="w-2 h-10 bg-gray-400 rounded-sm" />
-            </div>
-
-            {/* RIGHT PANEL (Drawing) */}
-            <div className={`relative flex-1 ${collapseDrawing ? 'opacity-60' : ''}`} style={{ minWidth: Math.max(320, screenWidth * 0.25) }}>
-              <div className="sticky top-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-gray-600">Panel Drawing</h2>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50"
-                      onClick={() => setZoom(z => Math.max(25, z - 25))}
-                      disabled={!designBlobUrl}
-                    >−</button>
-                    <span className="text-[10px] w-10 text-center">{zoom}%</span>
-                    <button
-                      type="button"
-                      className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50"
-                      onClick={() => setZoom(z => Math.min(400, z + 25))}
-                      disabled={!designBlobUrl}
-                    >+</button>
-                    <button
-                      type="button"
-                      className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50"
-                      onClick={() => designBlobUrl && window.open(designBlobUrl, '_blank')}
-                      disabled={!designBlobUrl}
-                    >New Tab</button>
-                    <button
-                      type="button"
-                      className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50"
-                      onClick={() => setCollapseDrawing(c => !c)}
-                    >{collapseDrawing ? 'Show' : 'Hide'}</button>
+                  <div className="flex gap-2">
+                    <button onClick={isRunning ? handleStop : () => setIsRunning(true)} className={`flex-1 px-6 py-2 text-white rounded ${isRunning ? 'bg-red-600' : 'bg-green-600'} hover:opacity-90`}>{isRunning ? 'Stop' : time > 0 ? 'Resume' : 'Start'}</button>
                   </div>
                 </div>
-                <div className={`border rounded-lg bg-white shadow-sm p-2 transition-all ${collapseDrawing ? 'h-10 overflow-hidden' : 'h-[calc(100vh-8rem)] flex flex-col'}`}> 
-                  {designLoading && <div className="text-xs text-gray-500 p-4">Loading drawing…</div>}
-                  {designLoadError && <div className="text-xs text-red-600 p-4">{designLoadError}</div>}
-                  {!designLoading && !designLoadError && designBlobUrl && !collapseDrawing && (
-                    <iframe
-                      key={zoom} // force reload to apply zoom param
-                      src={`${designBlobUrl}#toolbar=0&navpanes=0&zoom=${zoom}`}
-                      title="Panel Drawing"
-                      className="w-full flex-1 rounded border"
-                    />
-                  )}
-                  {!designLoading && !designLoadError && !designBlobUrl && (
-                    <div className="text-xs text-gray-500 p-4">No drawing available.</div>
-                  )}
+              </div>
+            </div>
+            {/* DRAG HANDLE */}
+            <div onMouseDown={handleMouseDown} className="flex items-center justify-center cursor-col-resize select-none hover:bg-gray-300 transition-colors" style={{ width: 14, background: '#e5e7eb', borderLeft: '1px solid #d1d5db', borderRight: '1px solid #d1d5db' }}>
+              <div className="w-2 h-10 bg-gray-400 rounded-sm" />
+            </div>
+            {/* RIGHT PANEL */}
+            <div className={`relative flex-1 border rounded-r bg-white shadow p-3 flex flex-col ${collapseDrawing ? 'opacity-60' : ''}`} style={{ minWidth: Math.max(320, screenWidth * 0.25) }}>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold text-gray-600">Panel Drawing</h2>
+                <div className="flex items-center gap-1">
+                  {/* Simplified controls to match data review (built-in PDF toolbar is enabled) */}
+                  <button className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50" onClick={() => designBlobUrl && window.open(designBlobUrl, '_blank')} disabled={!designBlobUrl}>New Tab</button>
+                  <button className="text-[10px] px-2 py-1 border rounded bg-white hover:bg-gray-50" onClick={() => setCollapseDrawing(c => !c)}>{collapseDrawing ? 'Show' : 'Hide'}</button>
+                  <button className="text-[10px] px-2 py-1 border rounded bg-blue-500 text-white hover:bg-blue-600" onClick={() => setShowDrawingModal(true)} disabled={!designBlobUrl}>Pop Out</button>
                 </div>
               </div>
+              <div className="flex-1 overflow-hidden rounded border bg-gray-50 flex">
+                {designLoading && <div className="m-auto text-xs text-gray-500">Loading drawing…</div>}
+                {designLoadError && <div className="m-auto text-xs text-red-600">{designLoadError}</div>}
+                {!designLoading && !designLoadError && designBlobUrl && !collapseDrawing && (
+                  <iframe src={`${designBlobUrl}#toolbar=1&navpanes=0&scrollbar=1`} title="Panel Drawing" className="w-full h-full" />
+                )}
+                {!designLoading && !designLoadError && !designBlobUrl && (
+                  <div className="m-auto text-xs text-gray-500">No drawing available.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDrawingModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex flex-col" onClick={() => setShowDrawingModal(false)}>
+          <div className="flex justify-between items-center p-3 bg-gray-900 text-white text-xs">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold">Expanded Drawing</span>
+              <span className="px-2 py-0.5 bg-gray-700 rounded font-mono">{formatTime(time)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500" onClick={(e) => { e.stopPropagation(); setShowDrawingModal(false); }}>Close</button>
+            </div>
+          </div>
+          <div className="flex-1 p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full h-full bg-white rounded shadow overflow-hidden">
+              {designBlobUrl && (
+                <iframe src={`${designBlobUrl}#toolbar=1&navpanes=0&scrollbar=1`} title="Panel Drawing Expanded" className="w-full h-full" />
+              )}
             </div>
           </div>
         </div>

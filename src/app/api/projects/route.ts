@@ -40,12 +40,12 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // Select more fields for frontend use
-    const projects = await prisma.project.findMany({
+    const projectsRaw = await prisma.project.findMany({
       select: {
         projectId: true,
         currentStatus: true,
-        Client: true,
+        clientId: true,
+        Client: { select: { firstName: true, lastName: true, address: true, city: true, state: true, zip: true } },
         city: true,
         state: true,
         streetaddress: true,
@@ -58,7 +58,31 @@ export async function GET(req: NextRequest) {
         expectedProductionCompletion: true,
         notes: true,
       },
+      where,
       orderBy: { projectId: 'asc' },
+    });
+
+    const projects = projectsRaw.map(p => {
+      const clientName = p.Client ? `${p.Client.firstName} ${p.Client.lastName}` : '';
+      const clientAddressFormatted = p.Client && p.Client.address ? `${p.Client.address}, ${p.Client.city}, ${p.Client.state} ${p.Client.zip}`.replace(/,\s*,/g, ', ').replace(/, \s*$/,'') : '';
+      return ({
+        projectId: p.projectId,
+        currentStatus: p.currentStatus,
+        clientId: p.clientId,
+        client: clientName,
+        clientAddressFormatted,
+        city: p.city,
+        state: p.state,
+        streetaddress: p.streetaddress,
+        contractAmount: Number(p.contractAmount),
+        totalContract: Number(p.totalContract),
+        buildableSqFt: p.buildableSqFt ?? null,
+        estimatedPanelSqFt: p.estimatedPanelSqFt ?? null,
+        expectedDrawingStart: p.expectedDrawingStart?.toISOString() ?? null,
+        expectedProductionStart: p.expectedProductionStart?.toISOString() ?? null,
+        expectedProductionCompletion: p.expectedProductionCompletion?.toISOString() ?? null,
+        notes: p.notes ?? null,
+      });
     });
 
     return NextResponse.json(projects);

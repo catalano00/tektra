@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { data, stagingId } = body; // Also get stagingId to update status
+    const { data, stagingId, overrideComponentId, overwriteProduction = false, dryRun = false } = body; // extended inputs
 
     if (!data || !data.projectnametag) {
       return NextResponse.json({ error: 'Missing projectnametag in request body' }, { status: 400 });
@@ -39,7 +39,15 @@ export async function POST(req: Request) {
 
     const createdComponents: any[] = [];
 
-    const basePanelLabel: string = data.panellabel || data.sheettitle || data.document_id || data.id || 'COMP';
+    const basePanelLabel: string = (overrideComponentId?.trim()) || data.panellabel || data.sheettitle || data.document_id || data.id || 'COMP';
+    // Before creating any components, enforce per‑project uniqueness of componentId
+    const existing = await prisma.component.findFirst({ where: { projectId: data.projectnametag, componentId: basePanelLabel } });
+    if (existing) {
+      if (!overwriteProduction) {
+        return NextResponse.json({ error: 'DUPLICATE_COMPONENT', projectId: data.projectnametag, componentId: basePanelLabel }, { status: 409 });
+      }
+    }
+
     const componentTypeMap: Record<Prefix, string> = {
       RP: 'Roof Panel',
       FP: 'Floor Panel',
@@ -64,10 +72,17 @@ export async function POST(req: Request) {
       usedPanelLogic = true;
 
       // Create a component first to obtain UUID
-      const component = await prisma.component.create({
+      const component = existing && overwriteProduction ? await prisma.component.update({
+        where: { id: existing.id },
         data: {
-          componentId: `${basePanelLabel}-${prefix}-${Date.now()}`, // unique-ish readable id
-            componentType: componentTypeMap[prefix] || (data.sheettitle || ''),
+          componentType: componentTypeMap[prefix] || (data.sheettitle || ''),
+          designUrl: data.media_link || '',
+          currentStatus: 'Approved',
+        },
+      }) : await prisma.component.create({
+        data: {
+          componentId: basePanelLabel,
+          componentType: componentTypeMap[prefix] || (data.sheettitle || ''),
           designUrl: data.media_link || '',
           currentStatus: 'Approved',
           percentComplete: 0,
@@ -76,6 +91,14 @@ export async function POST(req: Request) {
       });
 
       const compId = component.id; // UUID primary key
+
+      // if overwriteProduction, clear related rows before re-inserting
+      if (existing && overwriteProduction) {
+        await prisma.part.deleteMany({ where: { componentId: compId } });
+        await prisma.connectors.deleteMany({ where: { componentId: compId } });
+        await prisma.sheathing.deleteMany({ where: { componentId: compId } });
+        await prisma.framingTL.deleteMany({ where: { componentId: compId } });
+      }
 
       // PART LISTS
       const partSectionKey = `${prefix}PartList` as keyof typeof data;
@@ -166,7 +189,7 @@ export async function POST(req: Request) {
       const component = await prisma.component.upsert({
         where: { id: legacyComponentId },
         update: {
-          componentId: data.panellabel || '',
+          componentId: basePanelLabel,
           componentType: data.sheettitle || '',
           designUrl: data.media_link || '',
           currentStatus: 'Approved',
@@ -175,9 +198,9 @@ export async function POST(req: Request) {
         },
         create: {
           id: legacyComponentId,
-          componentId: data.panellabel || '',
+          componentId: basePanelLabel,
           componentType: data.sheettitle || '',
-            designUrl: data.media_link || '',
+          designUrl: data.media_link || '',
           currentStatus: 'Approved',
           percentComplete: 0,
           projectId: data.projectnametag,
@@ -238,6 +261,10 @@ export async function POST(req: Request) {
       createdComponents.push({ legacy: true, componentUUID: compId });
     }
 
+    if (dryRun) {
+      return NextResponse.json({ message: 'DRY_RUN_OK', componentId: basePanelLabel, createdComponents });
+    }
+
     // Update staging data status
     if (stagingId) {
       await prisma.stagingData.update({ where: { id: stagingId }, data: { status: 'approved' } });
@@ -246,9 +273,10 @@ export async function POST(req: Request) {
     return NextResponse.json({
       message: 'Data successfully approved and written to production tables',
       createdComponents,
+      componentId: basePanelLabel,
     });
   } catch (error) {
     console.error('Error writing to production tables:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }

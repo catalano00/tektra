@@ -7,20 +7,31 @@ export async function GET(req: NextRequest) {
   try {
     const projectId = req.nextUrl.searchParams.get('projectId');
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'Missing projectId' }, { status: 400 });
+    let components;
+    if (projectId) {
+      components = await prisma.component.findMany({
+        where: { projectId },
+        include: {
+          part: true,
+          sheathing: true,
+          connectors: true,
+          framingTL: true,
+          timeEntries: true,
+        },
+      });
+    } else {
+      // Fetch all components (limit optional in future)
+      components = await prisma.component.findMany({
+        include: {
+          part: true,
+          sheathing: true,
+          connectors: true,
+          framingTL: true,
+          timeEntries: true,
+        },
+        orderBy: { projectId: 'asc' },
+      });
     }
-
-    const components = await prisma.component.findMany({
-      where: { projectId },
-      include: {
-        part: true,
-        sheathing: true,
-        connectors: true,
-        framingTL: true,
-        timeEntries: true,
-      },
-    });
 
     return NextResponse.json({ components });
   } catch (err) {

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { computeOverallScore, badgeColor as sharedBadgeColor, PANEL_SECTION_CONFIGS, computeSectionScore } from '@/lib/scoring';
+import { nextAvailableId } from '@/lib/idSuffix';
 
 type StagingData = {
   id: string;
@@ -19,8 +21,17 @@ type SectionProps = {
   defaultOpen?: boolean;
 };
 
-function CollapsibleSection({ title, children, defaultOpen = false }: SectionProps) {
+function CollapsibleSection({ title, children, defaultOpen = false, score }: SectionProps & { score?: number }) {
   const [open, setOpen] = useState(defaultOpen);
+  // Determine badge color based on score thresholds
+  let badgeColor = '';
+  if (typeof score === 'number') {
+    if (score >= 95) badgeColor = 'bg-emerald-600';
+    else if (score >= 80) badgeColor = 'bg-emerald-500';
+    else if (score >= 60) badgeColor = 'bg-amber-500';
+    else if (score > 0) badgeColor = 'bg-red-500';
+    else badgeColor = 'bg-gray-400';
+  }
   return (
     <div className="mb-6 border rounded">
       <button
@@ -28,7 +39,17 @@ function CollapsibleSection({ title, children, defaultOpen = false }: SectionPro
         className="w-full flex justify-between items-center px-4 py-3 bg-gray-100 hover:bg-gray-200 font-semibold text-left"
         onClick={() => setOpen(o => !o)}
       >
-        {title}
+        <span className="flex items-center gap-2">
+          {title}
+          {typeof score === 'number' && (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white ${badgeColor}`}
+              title="Confidence score (data completeness)"
+            >
+              {isNaN(score) ? '–' : `${Math.round(score)}%`}
+            </span>
+          )}
+        </span>
         <span>{open ? '▲' : '▼'}</span>
       </button>
       {open && <div className="px-4 py-4 bg-white">{children}</div>}
@@ -269,6 +290,19 @@ function BlobFileViewer({ url }: { url: string }) {
   );
 }
 
+// Helper to safely format values for comparison tables
+function formatValue(val: any): string {
+  if (val === null || val === undefined || val === '') return '—';
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (typeof val === 'string') return val.length > 180 ? val.slice(0, 177) + '…' : val;
+  try {
+    const json = JSON.stringify(val);
+    return json.length > 180 ? json.slice(0, 177) + '…' : json;
+  } catch {
+    return '[Unserializable]';
+  }
+}
+
 export default function FileDetailsPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -290,12 +324,23 @@ export default function FileDetailsPage() {
   const [preReprocessSnapshot, setPreReprocessSnapshot] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [showDupModal, setShowDupModal] = useState(false);
+  const [dupCompareLoading, setDupCompareLoading] = useState(false);
+  const [dupCompareError, setDupCompareError] = useState<string | null>(null);
+  const [dupCompareData, setDupCompareData] = useState<any>(null);
+  const [dupActionBusy, setDupActionBusy] = useState<string | null>(null);
+  const [autoSuggestion, setAutoSuggestion] = useState<string | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
+  const [activeOtherIndex, setActiveOtherIndex] = useState<number | null>(null);
   // Toast notification state
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const pushToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // Duplicate detection state
+  const [dupInfo, setDupInfo] = useState<{ stagingCount: number; productionExists: boolean } | null>(null);
 
   // Click outside to close section menu
   useEffect(() => {
@@ -371,6 +416,20 @@ export default function FileDetailsPage() {
         if (data.rawData && data.rawData.media_link) {
           setOriginalMediaLink(data.rawData.media_link);
         }
+
+        // After loading, compute duplicate info
+        if (data?.rawData?.projectnametag && data?.rawData?.panellabel) {
+          const projectId = data.rawData.projectnametag;
+          const panelId = data.rawData.panellabel;
+          Promise.all([
+            fetch('/api/staging-data').then(r => r.ok ? r.json() : []),
+            fetch('/api/v1/components').then(r => r.ok ? r.json() : { components: [] })
+          ]).then(([stagingAll, prod]) => {
+            const stagingCount = (stagingAll || []).filter((s: any) => s.rawData?.projectnametag === projectId && s.rawData?.panellabel === panelId).length;
+            const productionExists = (prod.components || []).some((c: any) => c.projectId === projectId && c.componentId === panelId);
+            setDupInfo({ stagingCount, productionExists });
+          }).catch(() => setDupInfo(null));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error occurred');
       } finally {
@@ -429,9 +488,7 @@ export default function FileDetailsPage() {
 
   const componentDetails = ['projectnametag','panellabel', 'sheettitle' ];
 
-  // New panel/tag based sections mapping to their display titles & column schemas.
-  // We reuse generic key_0.. key_n fields already used by existing parser output.
-  const panelSectionConfigs: Record<string, { title: string; columns: { key: string; label: string; type?: string }[] }> = {
+  const panelSectionConfigs: Record<string, { title: string; columns: { key: string; label: string; type?: string }[]; requiredKeys: string[] }> = {
     RPSheathing: {
       title: 'Roof Panel – Sheathing',
       columns: [
@@ -439,6 +496,7 @@ export default function FileDetailsPage() {
         { key: 'key_1', label: 'Thickness' },
         { key: 'key_2', label: 'Area' },
       ],
+      requiredKeys: ['key_0','key_1','key_2'],
     },
     RPPartList: {
       title: 'Roof Panel – Part List',
@@ -448,6 +506,7 @@ export default function FileDetailsPage() {
         { key: 'key_2', label: 'Cut Length' },
         { key: 'key_3', label: 'Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2','key_3'],
     },
     FPConnectors: {
       title: 'Floor Panel – Connectors',
@@ -456,6 +515,7 @@ export default function FileDetailsPage() {
         { key: 'key_1', label: 'Description' },
         { key: 'key_2', label: 'Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2'],
     },
     FPPartList: {
       title: 'Floor Panel – Part List',
@@ -465,6 +525,7 @@ export default function FileDetailsPage() {
         { key: 'key_2', label: 'Cut Length' },
         { key: 'key_3', label: 'Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2','key_3'],
     },
     FPSheathing: {
       title: 'Floor Panel – Sheathing',
@@ -473,6 +534,7 @@ export default function FileDetailsPage() {
         { key: 'key_1', label: 'Area' },
         { key: 'key_2', label: '4x8 Panel Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2'],
     },
     WPConnectors: {
       title: 'Wall Panel – Connectors',
@@ -480,6 +542,7 @@ export default function FileDetailsPage() {
         { key: 'key_0', label: 'Label' },
         { key: 'key_1', label: 'Count' },
       ],
+      requiredKeys: ['key_0','key_1'],
     },
     WPFramingTL: {
       title: 'Wall Panel – Framing Total Length',
@@ -488,6 +551,7 @@ export default function FileDetailsPage() {
         { key: 'key_1', label: 'Total Length' },
         { key: 'key_2', label: 'Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2'],
     },
     WPPartList: {
       title: 'Wall Panel – Part List',
@@ -497,6 +561,7 @@ export default function FileDetailsPage() {
         { key: 'key_2', label: 'Count' },
         { key: 'key_3', label: 'Cut Length' },
       ],
+      requiredKeys: ['key_0','key_1','key_2','key_3'],
     },
     WPSheathing: {
       title: 'Wall Panel – Sheathing',
@@ -505,35 +570,52 @@ export default function FileDetailsPage() {
         { key: 'key_1', label: 'Area' },
         { key: 'key_2', label: '4x8 Panel Count' },
       ],
+      requiredKeys: ['key_0','key_1','key_2'],
     },
-    // Keep timestamps as a special structured list
     timestamps: {
       title: 'Time Stamps',
       columns: [
         { key: 'key_0', label: 'Date' },
         { key: 'key_1', label: 'Description' },
       ],
+      requiredKeys: ['key_0','key_1'],
     },
   };
+  // Sync requiredKeys with shared config (ensure any new sections update scoring module)
+  Object.keys(PANEL_SECTION_CONFIGS).forEach(k => {
+    if (panelSectionConfigs[k]) {
+      panelSectionConfigs[k].requiredKeys = PANEL_SECTION_CONFIGS[k].requiredKeys;
+    }
+  });
 
-  // Order of display for all sections (core sections first)
+  // Panel type -> allowed section keys mapping
+  const PANEL_TYPE_SECTIONS: Record<string, string[]> = {
+    roof: ['RPSheathing','RPPartList'],
+    floor: ['FPConnectors','FPPartList','FPSheathing'],
+    wall: ['WPConnectors','WPFramingTL','WPPartList','WPSheathing'],
+  };
+  function detectPanelType(data: any): 'roof' | 'floor' | 'wall' | null {
+    const label: string = (data?.panellabel || '').toString().toLowerCase();
+    const sheet: string = (data?.sheettitle || '').toString().toLowerCase();
+    const source = label + ' ' + sheet;
+    if (/\brp\b|roof/.test(source)) return 'roof';
+    if (/\bfp\b|floor/.test(source)) return 'floor';
+    if (/\bwp\b|wall/.test(source)) return 'wall';
+    return null;
+  }
+  const panelType = detectPanelType(editableData);
+  const allowedDynamicSections = panelType ? PANEL_TYPE_SECTIONS[panelType] : Object.keys(panelSectionConfigs).filter(k => k !== 'timestamps');
+
+  // Order of display for all sections (core sections first) now filtered by panel type
   const sectionOrder = [
     'documentProperties',
     'componentDetails',
-    'RPSheathing',
-    'RPPartList',
-    'FPConnectors',
-    'FPPartList',
-    'FPSheathing',
-    'WPConnectors',
-    'WPFramingTL',
-    'WPPartList',
-    'WPSheathing',
+    ...allowedDynamicSections,
     'timestamps',
   ];
 
-  // Allow adding any panel section that is not present
-  const availableSections = Object.keys(panelSectionConfigs).filter(k => k !== 'timestamps');
+  // Allow adding any panel section that is not present AND allowed for this panel type
+  const availableSections = allowedDynamicSections;
 
   // Section management functions
   const addSection = (sectionName: string) => {
@@ -712,9 +794,114 @@ export default function FileDetailsPage() {
     }
   }
 
+  async function openDuplicateModal() {
+    if (!id) return;
+    setShowDupModal(true);
+    setDupCompareLoading(true);
+    setDupCompareError(null);
+    try {
+      const resp = await fetch(`/api/duplicates/compare/${id}`);
+      if (!resp.ok) throw new Error(`Compare load failed (${resp.status})`);
+      const json = await resp.json();
+      setDupCompareData(json);
+      // Build taken ids set
+      const taken: string[] = [];
+      if (json?.production?.componentId) taken.push(json.production.componentId);
+      (json?.otherStaging || []).forEach((s: any) => {
+        const otherId = s?.rawData?.panellabel;
+        if (otherId) taken.push(otherId);
+      });
+      const base = json?.staging?.panellabel || editableData.panellabel;
+      if (base) {
+        const suggestion = nextAvailableId(base, taken);
+        if (suggestion !== base) setAutoSuggestion(suggestion);
+      }
+    } catch (e: any) {
+      setDupCompareError(e.message || 'Failed to load comparison');
+    } finally {
+      setDupCompareLoading(false);
+    }
+  }
+
+  async function performApprove(opts: { overrideComponentId?: string; overwriteProduction?: boolean }) {
+    setDupActionBusy('approve');
+    try {
+      const response = await fetch('/api/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: { ...editableData, panellabel: editableData.panellabel },
+          stagingId: id,
+          overrideComponentId: opts.overrideComponentId,
+          overwriteProduction: opts.overwriteProduction || false
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        if (response.status === 409 && err.error === 'DUPLICATE_COMPONENT') {
+          // Keep modal open, refresh comparison in case of race
+          await openDuplicateModal();
+          throw new Error('Duplicate still exists – choose another action');
+        }
+        throw new Error(err.error || 'Approve failed');
+      }
+      pushToast('Approved', 'success');
+      setShowDupModal(false);
+      router.push('/production-planning/data-review');
+    } catch (e: any) {
+      pushToast(e.message || String(e), 'error');
+    } finally {
+      setDupActionBusy(null);
+    }
+  }
+
+  async function handleReject() {
+    if (!id) return;
+    if (!confirm('Reject this staging record?')) return;
+    setDupActionBusy('reject');
+    try {
+      const resp = await fetch(`/api/staging-data/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawData: editableData, status: 'rejected' }) });
+      if (!resp.ok) throw new Error('Reject failed');
+      pushToast('Rejected', 'success');
+      setShowDupModal(false);
+      router.push('/production-planning/data-review');
+    } catch (e: any) {
+      pushToast(e.message || 'Reject failed', 'error');
+    } finally {
+      setDupActionBusy(null);
+    }
+  }
+
+  // Compute confidence scores for each dynamic panel section (using shared computeSectionScore)
+  const sectionScores = (() => {
+    const scores: Record<string, number> = {};
+    allowedDynamicSections.forEach(sectionKey => {
+      const rows = editableData[sectionKey];
+      if (!Array.isArray(rows) || rows.length === 0) {
+        scores[sectionKey] = 0;
+        return;
+      }
+      scores[sectionKey] = computeSectionScore(rows, PANEL_SECTION_CONFIGS[sectionKey]);
+    });
+    return scores;
+  })();
+
   return (
     <DndProvider backend={HTML5Backend}>
       <main className="min-h-screen w-full flex flex-col items-center bg-white p-4 lg:p-8">
+        {dupInfo && (dupInfo.stagingCount > 1 || dupInfo.productionExists) && (
+          <div className="w-full max-w-[1800px] mb-4 p-4 border rounded-lg bg-rose-50 border-rose-200 text-rose-800 flex flex-col gap-2">
+            <div className="font-semibold flex items-center gap-2">
+              <span className="inline-block px-2 py-0.5 rounded bg-rose-600 text-white text-xs">DUPLICATE WARNING</span>
+              Potential duplicate detected for Panel ID <span className="font-mono">{editableData?.panellabel}</span> in project <span className="font-mono">{editableData?.projectnametag}</span>.
+            </div>
+            <div className="text-sm flex flex-wrap gap-4">
+              <span>Staging occurrences: <strong>{dupInfo.stagingCount}</strong></span>
+              <span>Production exists: <strong>{dupInfo.productionExists ? 'Yes' : 'No'}</strong></span>
+            </div>
+            <div className="text-xs text-rose-700">Resolve duplicates before approval to avoid rejection (per-project uniqueness enforced).</div>
+          </div>
+        )}
         <div className="flex flex-col items-center mb-4">
           <h1 className="text-2xl font-bold mb-2">File Details</h1>
           {screenWidth >= 2560 && (
@@ -866,7 +1053,7 @@ export default function FileDetailsPage() {
                   
                   if (sectionKey === 'documentProperties') {
                 return (
-                  <CollapsibleSection title="Document Properties" defaultOpen={false} key={sectionKey}>
+                  <CollapsibleSection title="Document Properties" defaultOpen={false} key={sectionKey} score={100}>
                     <div className={`grid gap-4 ${screenWidth >= 1920 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       {documentProperties.map((key) => (
                         <div key={key} className="mb-4">
@@ -884,7 +1071,9 @@ export default function FileDetailsPage() {
                 );
               } else if (sectionKey === 'componentDetails') {
                 return (
-                  <CollapsibleSection title="Component Details" defaultOpen key={sectionKey}>
+                  <CollapsibleSection title="Component Details" defaultOpen key={sectionKey} score={
+                    (['projectnametag','panellabel','sheettitle'].filter(k => (editableData[k] || '').toString().trim() !== '').length / 3) * 100
+                  }>
                     <div className={`grid gap-4 ${screenWidth >= 1920 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       {componentDetails.map((key) => {
                         // Map field names to display labels
@@ -919,7 +1108,7 @@ export default function FileDetailsPage() {
               } else if (panelSectionConfigs[sectionKey] && Array.isArray(editableData[sectionKey])) {
                 const cfg = panelSectionConfigs[sectionKey];
                 return (
-                  <CollapsibleSection title={cfg.title} defaultOpen key={sectionKey}>
+                  <CollapsibleSection title={cfg.title} defaultOpen key={sectionKey} score={sectionScores[sectionKey]}>
                     <EditableTable
                       columns={cfg.columns as any}
                       data={editableData[sectionKey] || []}
@@ -1013,8 +1202,12 @@ export default function FileDetailsPage() {
           </div>
         </div>
         {/* Action Buttons */}
+        {dupInfo && (dupInfo.stagingCount > 1 || dupInfo.productionExists) && (
+          // Inline override section removed – users must use Duplicate Resolution modal now
+          <></>
+        )}
         <div 
-          className="w-full flex justify-end gap-4 mt-8"
+          className="w-full flex justify-end gap-4 mt-2"
           style={{ 
             maxWidth: screenWidth >= 2560 ? '95vw' : screenWidth >= 1920 ? '90vw' : '1800px'
           }}
@@ -1033,40 +1226,45 @@ export default function FileDetailsPage() {
               try {
                 const response = await fetch('/api/approve', {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ 
-                    data: editableData, 
-                    stagingId: id // Pass the staging ID to update status
-                  }),
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ data: { ...editableData, panellabel: editableData.panellabel }, stagingId: id, overrideComponentId: editableData.__overrideComponentId?.trim() || undefined }),
                 });
-
                 if (!response.ok) {
                   const errorData = await response.json();
+                  if (response.status === 409 && errorData.error === 'DUPLICATE_COMPONENT') {
+                    pushToast('Duplicate detected – open resolver', 'error');
+                    await openDuplicateModal();
+                    return;
+                  }
                   throw new Error(errorData.error || 'Failed to approve data');
                 }
-
                 const result = await response.json();
                 pushToast(result.message || 'Approved', 'success');
-                router.push('/production-planning/data-review'); // Navigate back to the data review page
-              } catch (error) {
-                console.error('Error approving data:', error);
-                pushToast(`Failed to approve data: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+                router.push('/production-planning/data-review');
+              } catch (error: any) {
+                pushToast(`Failed to approve data: ${error.message || 'Unknown error'}`, 'error');
               }
             }}
           >
             Approve
           </button>
-          <button
-            type="button"
-            className="bg-red-600 text-white font-semibold px-6 py-2 rounded hover:bg-red-700 transition"
-            onClick={() => {
-              /* handle reject logic */
-            }}
-          >
-            Reject
-          </button>
+          {dupInfo && (dupInfo.stagingCount > 1 || dupInfo.productionExists) ? (
+            <button
+              type="button"
+              className="bg-red-600 text-white font-semibold px-6 py-2 rounded hover:bg-red-700 transition"
+              onClick={() => { openDuplicateModal(); }}
+            >
+              Resolve Duplicates
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="bg-red-600 text-white font-semibold px-6 py-2 rounded hover:bg-red-700 transition"
+              onClick={handleReject}
+            >
+              Reject
+            </button>
+          )}
           <button
             type="button"
             className="bg-blue-600 text-white font-semibold px-6 py-2 rounded hover:bg-blue-700 transition"
@@ -1122,6 +1320,245 @@ export default function FileDetailsPage() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showDupModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-5xl rounded-lg shadow-xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold">Duplicate Resolution</h2>
+              <div className="flex items-center gap-2">
+                {dupCompareData && (
+                  <button onClick={() => setShowComparison(s => !s)} className="text-xs px-2 py-1 rounded border bg-gray-50 hover:bg-gray-100">
+                    {showComparison ? 'Hide' : 'Show'} Comparison
+                  </button>
+                )}
+                <button className="text-gray-500 hover:text-gray-700" onClick={() => setShowDupModal(false)}>✕</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm">
+              {dupCompareLoading && <div>Loading comparison…</div>}
+              {dupCompareError && <div className="text-red-600">{dupCompareError}</div>}
+              {!dupCompareLoading && !dupCompareError && dupCompareData && (
+                <div className="space-y-6">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <h3 className="text-sm font-semibold mb-2">Staging</h3>
+                      <div className="text-xs text-gray-600">
+                        <div><strong>ID:</strong> {dupCompareData.staging?.id}</div>
+                        <div><strong>Panel Label:</strong> {dupCompareData.staging?.panellabel}</div>
+                        <div><strong>Project Name Tag:</strong> {dupCompareData.staging?.projectnametag}</div>
+                      </div>
+                    </div>
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <h3 className="text-sm font-semibold mb-2">Production</h3>
+                      <div className="text-xs text-gray-600">
+                        <div><strong>ID:</strong> {dupCompareData.production?.id}</div>
+                        <div><strong>Component ID:</strong> {dupCompareData.production?.componentId}</div>
+                        <div><strong>Project ID:</strong> {dupCompareData.production?.projectId}</div>
+                      </div>
+                    </div>
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <h3 className="text-sm font-semibold mb-2">Other Staging</h3>
+                      <div className="text-xs text-gray-600">
+                        {dupCompareData.otherStaging?.map((o: any, idx: number) => (
+                          <div key={o.id} className="mb-1">
+                            <strong>#{idx + 1}:</strong> {o.id}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {showComparison && (
+                    <div className="space-y-5">
+                      {/* Other staging duplicates navigation */}
+                      {dupCompareData.otherStaging?.length > 0 && (
+                        <div className="border rounded p-3 bg-gray-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Other Staging Duplicates</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {dupCompareData.otherStaging.map((o: any, idx: number) => (
+                                <button
+                                  key={o.id}
+                                  onClick={() => setActiveOtherIndex(idx === activeOtherIndex ? null : idx)}
+                                  className={`px-2 py-1 text-[10px] rounded border ${idx === activeOtherIndex ? 'bg-rose-600 text-white border-rose-600' : 'bg-white hover:bg-rose-50 border-rose-300 text-rose-700'}`}
+                                  title={o.id}
+                                >{idx+1}</button>
+                              ))}
+                            </div>
+                          </div>
+                          {activeOtherIndex !== null && dupCompareData.otherStaging[activeOtherIndex] && (
+                            <div className="mt-2 text-[11px] overflow-auto max-h-60">
+                              {(() => {
+                                const other = dupCompareData.otherStaging[activeOtherIndex];
+                                const rows: Array<{ path: string; a: any; b: any }>[] = [] as any;
+                                // shallow compare of top-level values between target staging & this other staging rawData
+                                const aData = dupCompareData.staging || {};
+                                const bData = other.rawData || {};
+                                const keys = Array.from(new Set([...Object.keys(aData), ...Object.keys(bData)])).slice(0, 200); // cap
+                                return (
+                                  <table className="w-full border">
+                                    <thead className="bg-gray-100 text-[10px]">
+                                      <tr>
+                                        <th className="px-2 py-1 text-left">Field</th>
+                                        <th className="px-2 py-1 text-left">This Staging</th>
+                                        <th className="px-2 py-1 text-left">Other #{activeOtherIndex+1}</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {keys.map(k => {
+                                        const av = (aData as any)[k];
+                                        const bv = (bData as any)[k];
+                                        const same = JSON.stringify(av) === JSON.stringify(bv);
+                                        return (
+                                          <tr key={k} className={`border-t ${same ? '' : 'bg-amber-50'}`}> 
+                                            <td className="px-2 py-1 align-top whitespace-nowrap font-mono text-[10px]">{k}</td>
+                                            <td className="px-2 py-1 align-top max-w-[240px] break-words">{formatValue(av)}</td>
+                                            <td className="px-2 py-1 align-top max-w-[240px] break-words">{formatValue(bv)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* Section Data Comparison (staging vs production) */}
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">Section Data Comparison</h3>
+                        <span className="text-[10px] text-gray-500">Staging vs Production</span>
+                      </div>
+                      {(() => {
+                        // Build normalized staging side from editableData (already structured)
+                        const stagingSections: { key: string; title: string; rows: any[]; columns: string[] }[] = [];
+                        const pushIf = (key: string, title: string, rows: any[], columns: string[]) => { if (rows && rows.length) stagingSections.push({ key, title, rows, columns }); };
+                        pushIf('part', 'Part List', editableData.RPPartList || editableData.FPPartList || editableData.WPPartList || [], ['key_0','key_1','key_2','key_3']);
+                        pushIf('sheathing', 'Sheathing', (editableData.RPSheathing || editableData.FPSheathing || editableData.WPSheathing || []), ['key_0','key_1','key_2','key_3']);
+                        pushIf('connectors', 'Connectors', (editableData.RPConnectors || editableData.FPConnectors || editableData.WPConnectors || []), ['key_0','key_1','key_2']);
+                        pushIf('framingTL', 'Framing Total Length', (editableData.WPFramingTL || []), ['key_0','key_1','key_2']);
+                        // Production side
+                        const prod = dupCompareData.production || {};
+                        const prodData: Record<string, any> = {
+                          part: Array.isArray(prod.part) ? prod.part.map((p: any) => ({ size: p.size, label: p.label, count: p.count, cutLength: p.cutLength })) : [],
+                          sheathing: prod.sheathing ? [{ componentCode: prod.sheathing.componentCode, panelArea: prod.sheathing.panelArea, count: prod.sheathing.count, description: prod.sheathing.description }] : [],
+                          connectors: prod.connectors ? [{ label: prod.connectors.label, description: prod.connectors.description, count: prod.connectors.count }] : [],
+                          framingTL: prod.framingTL ? [{ ftype: prod.framingTL.ftype, totalLength: prod.framingTL.totalLength, count: prod.framingTL.count }] : [],
+                        };
+                        const sectionOrderLocal: { key: string; title: string }[] = [
+                          { key: 'part', title: 'Part List' },
+                          { key: 'sheathing', title: 'Sheathing' },
+                          { key: 'connectors', title: 'Connectors' },
+                          { key: 'framingTL', title: 'Framing Total Length' },
+                        ];
+                        return sectionOrderLocal.map(sec => {
+                          const stagingSec = stagingSections.find(s => s.key === sec.key);
+                          const stagingRows = stagingSec?.rows || [];
+                          const prodRows = prodData[sec.key] || [];
+                          const heading = sec.title;
+                          return (
+                            <div key={sec.key} className="border rounded-lg overflow-hidden">
+                              <div className="px-3 py-2 bg-gray-100 flex items-center justify-between">
+                                <div className="font-medium text-xs">{heading}</div>
+                                <div className="text-[10px] text-gray-600">Staging {stagingRows.length} • Production {prodRows.length}</div>
+                              </div>
+                              <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x">
+                                <div className="p-3 overflow-auto max-h-56">
+                                  <div className="text-[10px] uppercase tracking-wide font-semibold mb-1 text-gray-500">Staging</div>
+                                  {stagingRows.length === 0 && <div className="text-[11px] text-gray-400">No rows</div>}
+                                  {stagingRows.length > 0 && (
+                                    <table className="w-full text-[11px] border">
+                                      <thead className="bg-white">
+                                        <tr>
+                                          {Object.keys(stagingRows[0]).map(col => (<th key={col} className="px-2 py-1 text-left font-medium border-b bg-gray-50">{col}</th>))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {stagingRows.map((r:any, i:number) => (
+                                          <tr key={i} className="border-t">
+                                            {Object.keys(stagingRows[0]).map(col => (<td key={col} className="px-2 py-1 align-top border-r last:border-r-0">{r[col] ?? '—'}</td>))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
+                                <div className="p-3 overflow-auto max-h-56">
+                                  <div className="text-[10px] uppercase tracking-wide font-semibold mb-1 text-gray-500">Production</div>
+                                  {prodRows.length === 0 && <div className="text-[11px] text-gray-400">No rows</div>}
+                                  {prodRows.length > 0 && (
+                                    <table className="w-full text-[11px] border">
+                                      <thead className="bg-white">
+                                        <tr>
+                                          {Object.keys(prodRows[0]).map(col => (<th key={col} className="px-2 py-1 text-left font-medium border-b bg-gray-50">{col}</th>))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {prodRows.map((r:any, i:number) => (
+                                          <tr key={i} className="border-t">
+                                            {Object.keys(prodRows[0]).map(col => (
+                                              <td key={col} className={`px-2 py-1 align-top border-r last:border-r-0 ${stagingRows.some((sr:any) => JSON.stringify(sr) === JSON.stringify(r)) ? '' : 'bg-amber-50'}`}>{r[col] ?? '—'}</td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+                  <div className="border rounded p-4 bg-amber-50 text-amber-800 text-xs">
+                    Choose an action below to resolve the duplicate. Overwrite will replace production component related rows.
+                  </div>
+                  {/* Action Sections */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border rounded p-4 flex flex-col gap-3">
+                      <div className="font-semibold text-sm">Override / Keep Both</div>
+                      <label className="text-xs font-medium text-gray-600">New Panel ID</label>
+                      <input
+                        type="text"
+                        value={editableData.__overrideComponentId || ''}
+                        onChange={e => { const v = e.target.value; setEditableData({ ...editableData, __overrideComponentId: v }); }}
+                        placeholder={autoSuggestion || 'Enter unique ID'}
+                        className="border rounded px-2 py-1 text-sm"
+                      />
+                      {autoSuggestion && !editableData.__overrideComponentId && (
+                        <button type="button" className="self-start text-xs text-blue-600 underline" onClick={() => setEditableData({ ...editableData, __overrideComponentId: autoSuggestion })}>Use suggestion {autoSuggestion}</button>
+                      )}
+                      <div className="flex flex-wrap gap-2 mt-2 text-xs">
+                        <button disabled={dupActionBusy!==null} onClick={() => performApprove({ overrideComponentId: editableData.__overrideComponentId?.trim() || autoSuggestion || undefined })} className="px-3 py-1.5 rounded bg-green-600 text-white text-xs font-medium hover:bg-green-500 disabled:opacity-50">Approve With New ID</button>
+                        <button disabled={dupActionBusy!==null} onClick={() => performApprove({ overrideComponentId: autoSuggestion || nextAvailableId(editableData.panellabel, [editableData.panellabel, autoSuggestion].filter(Boolean) as string[]) })} className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 disabled:opacity-50">Auto-Suffix & Approve</button>
+                      </div>
+                    </div>
+                    <div className="border rounded p-4 flex flex-col gap-3">
+                      <div className="font-semibold text-sm text-red-700">Destructive Options</div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <button disabled={dupActionBusy!==null} onClick={handleReject} className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-medium hover:bg-red-500 disabled:opacity-50">Reject</button>
+                        <button disabled={dupActionBusy!==null || !dupCompareData.production} onClick={() => { if (confirm('Overwrite existing production component & related rows?')) performApprove({ overwriteProduction: true }); }} className="px-3 py-1.5 rounded bg-orange-600 text-white text-xs font-medium hover:bg-orange-500 disabled:opacity-50">Overwrite Production</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button
+                type="button"
+                onClick={() => setShowDupModal(false)}
+                className="px-3 py-1.5 text-xs font-medium bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
