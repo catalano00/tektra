@@ -1,8 +1,19 @@
 'use client';
 
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function LoginPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.replace('/');
+    }
+  }, [status, router]);
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-center bg-white relative">
       {/* Centered Card */}
@@ -55,7 +66,7 @@ export default function LoginPage() {
         <button
           onClick={(e) => {
             e.preventDefault();
-            signIn('azure-ad');
+            signIn('azure-ad', { callbackUrl: '/' });
           }}
           className="w-full flex items-center justify-center border border-gray-300 rounded py-2 font-semibold bg-white hover:bg-gray-50 transition"
         >

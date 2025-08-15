@@ -160,6 +160,10 @@ model StagingData {
   status      String   @default("pending") // Status: pending, processed, failed
   createdAt   DateTime @default(now()) // Timestamp for when the data was received
   updatedAt   DateTime @updatedAt // Automatically updated timestamp
+  approvedBy  String?  // User (email or name) who approved
+  approvedAt  DateTime? // When approved
+  rejectedBy  String?  // User who rejected
+  rejectedAt  DateTime? // When rejected
 }
 
 model Client {
@@ -217,4 +221,36 @@ model ProjectWeekCapacity {
 
   @@unique([projectId, weekKey])
   @@index([weekKey])
+}
+
+enum Role {
+  ADMIN
+  PLANNER
+  ENGINEER
+  QA
+  VIEWER
+  OPERATOR
+  MANAGER
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  role        Role     @default(VIEWER)
+  image       String?
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model FeaturePermission {
+  id        String   @id @default(cuid())
+  feature   String
+  role      Role
+  allowed   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([feature, role])
 }

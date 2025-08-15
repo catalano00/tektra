@@ -58,6 +58,9 @@ export default function DataReviewPage() {
     }
 
     fetchStagingData();
+    // Restore persisted filter
+    const persisted = typeof window !== 'undefined' ? window.localStorage.getItem('dr_filter') : null;
+    if (persisted) setActiveFilter(persisted);
     // Fetch production components once
     fetch('/api/v1/components')
       .then(r => r.ok ? r.json() : Promise.reject())
@@ -67,6 +70,13 @@ export default function DataReviewPage() {
       })
       .catch(() => setProductionComponents([]));
   }, []);
+
+  // Persist activeFilter
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (activeFilter) window.localStorage.setItem('dr_filter', activeFilter); else window.localStorage.removeItem('dr_filter');
+    }
+  }, [activeFilter]);
 
   // Recompute duplicate stats when data or production list changes
   useEffect(() => {
@@ -185,6 +195,12 @@ export default function DataReviewPage() {
     return acc;
   }, {});
 
+  const statusCounts = {
+    approved: stagingData.filter(s => s.status === 'approved').length,
+    rejected: stagingData.filter(s => s.status === 'rejected').length,
+    pending: stagingData.filter(s => s.status === 'pending').length,
+  };
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center bg-white p-4 lg:p-8">
       <div className="flex flex-col items-center mb-6">
@@ -270,6 +286,23 @@ export default function DataReviewPage() {
             </div>
           );
         })}
+
+        {/* Insert Approved Tile */}
+        <div
+          className={`bg-gradient-to-br from-emerald-50 to-emerald-100 shadow-lg border border-emerald-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer ${activeFilter === 'approved' ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
+          onClick={() => handleFilterByStatus('approved')}
+        >
+          <span className="text-emerald-700 text-base font-semibold mb-4 tracking-wide">Approved</span>
+          <span className="text-5xl lg:text-6xl font-bold text-emerald-800 font-mono">{statusCounts.approved}</span>
+        </div>
+        {/* Insert Rejected Tile */}
+        <div
+          className={`bg-gradient-to-br from-rose-50 to-rose-100 shadow-lg border border-rose-200 rounded-xl px-6 py-8 flex flex-col items-center hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer ${activeFilter === 'rejected' ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
+          onClick={() => handleFilterByStatus('rejected')}
+        >
+          <span className="text-rose-700 text-base font-semibold mb-4 tracking-wide">Rejected</span>
+          <span className="text-5xl lg:text-6xl font-bold text-rose-800 font-mono">{statusCounts.rejected}</span>
+        </div>
 
         {/* Additional Stats Tiles for Ultrawide - Consistent Styling */}
         {screenWidth >= 2560 && (
@@ -362,6 +395,9 @@ export default function DataReviewPage() {
               {screenWidth >= 1920 && (
                 <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Updated At</th>
               )}
+              {screenWidth >= 1920 && (
+                <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Audit</th>
+              )}
               <th className="px-4 lg:px-6 py-4 text-left font-semibold text-slate-700 tracking-wide">Actions</th>
             </tr>
           </thead>
@@ -442,6 +478,16 @@ export default function DataReviewPage() {
                       <div className="text-slate-400 text-xs font-normal">
                         {new Date(data.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </div>
+                    </td>
+                  )}
+                  {screenWidth >= 1920 && (
+                    <td className="px-4 lg:px-6 py-4 text-slate-500 text-xs font-mono">
+                      {data.status === 'approved' && (data as any).approvedBy && (
+                        <span title={`Approved ${(data as any).approvedAt ? new Date((data as any).approvedAt).toLocaleString() : ''}`}>✓ {(data as any).approvedBy}</span>
+                      )}
+                      {data.status === 'rejected' && (data as any).rejectedBy && (
+                        <span title={`Rejected ${(data as any).rejectedAt ? new Date((data as any).rejectedAt).toLocaleString() : ''}`}>✕ {(data as any).rejectedBy}</span>
+                      )}
                     </td>
                   )}
                   <td className="px-4 lg:px-6 py-4">

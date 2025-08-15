@@ -8,6 +8,7 @@
   "include": [
     "prisma/seedComponents.ts",
     "prisma/seedProjects.ts",
-    "prisma/crosscheck_project_ids.ts"
+    "prisma/crosscheck_project_ids.ts",
+    "prisma/seedAdmin.ts"
   ]
 }

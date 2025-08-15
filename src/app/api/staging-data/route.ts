@@ -3,8 +3,10 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
+    const status = req.nextUrl.searchParams.get('status');
     const stagingData = await prisma.stagingData.findMany({
-      where: { status: 'pending' }, // Fetch only pending entries
+      where: status ? { status } : undefined,
+      orderBy: { createdAt: 'desc' },
     });
 
     return new NextResponse(JSON.stringify(stagingData), { status: 200 });

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "seed:components": "ts-node --project tsconfig.seed.json prisma/seedComponents.ts",
     "seed:projects": "ts-node --project tsconfig.seed.json prisma/seedProjects.ts",
-    "seed:crosscheck": "ts-node --project tsconfig.seed.json prisma/crosscheck_project_ids.ts"
+    "seed:crosscheck": "ts-node --project tsconfig.seed.json prisma/crosscheck_project_ids.ts",
+    "seed:admin": "ts-node --project tsconfig.seed.json prisma/seedAdmin.ts"
   },
   "dependencies": {
     "@eslint/eslintrc": "^3",

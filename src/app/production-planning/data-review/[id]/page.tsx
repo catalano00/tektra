@@ -385,6 +385,11 @@ export default function FileDetailsPage() {
     wpframingtl: 'WPFramingTL',
     wppartlist: 'WPPartList',
     wpsheathing: 'WPSheathing',
+    // Newly added schedule tagged sections
+    wpschedulea: 'WPScheduleA',
+    wpscheduleb: 'WPScheduleB',
+    fpschedulea: 'FPScheduleA',
+    fpscheduleb: 'FPScheduleB',
   };
   // Map of raw (lowercase) array keys -> canonical section keys (used for initial normalization & reprocess)
   const RAW_SECTION_KEY_MAP = TAG_SECTION_MAP; // identical mapping presently
@@ -572,6 +577,48 @@ export default function FileDetailsPage() {
       ],
       requiredKeys: ['key_0','key_1','key_2'],
     },
+    // Schedule sections (5 keys each)
+    WPScheduleA: {
+      title: 'Wall Panel – Schedule A',
+      columns: [
+        { key: 'key_0', label: 'Component ID' },
+        { key: 'key_1', label: 'Max Length' },
+        { key: 'key_2', label: 'Max Height' },
+        { key: 'key_3', label: 'SqFt' },
+        { key: 'key_4', label: 'Level' },
+      ],
+      requiredKeys: ['key_0','key_1','key_2','key_3','key_4'],
+    },
+    WPScheduleB: {
+      title: 'Wall Panel – Schedule B',
+      columns: [
+        { key: 'key_0', label: 'Component ID' },
+        { key: 'key_1', label: 'Total Weight' },
+      ],
+      requiredKeys: ['key_0','key_1'],
+    },
+    FPScheduleA: {
+      title: 'Floor Panel – Schedule A',
+      columns: [
+        { key: 'key_0', label: 'Field 1' },
+        { key: 'key_1', label: 'Field 2' },
+        { key: 'key_2', label: 'Field 3' },
+        { key: 'key_3', label: 'Field 4' },
+        { key: 'key_4', label: 'Field 5' },
+      ],
+      requiredKeys: ['key_0','key_1','key_2','key_3','key_4'],
+    },
+    FPScheduleB: {
+      title: 'Floor Panel – Schedule B',
+      columns: [
+        { key: 'key_0', label: 'Field 1' },
+        { key: 'key_1', label: 'Field 2' },
+        { key: 'key_2', label: 'Field 3' },
+        { key: 'key_3', label: 'Field 4' },
+        { key: 'key_4', label: 'Field 5' },
+      ],
+      requiredKeys: ['key_0','key_1','key_2','key_3','key_4'],
+    },
     timestamps: {
       title: 'Time Stamps',
       columns: [
@@ -592,7 +639,7 @@ export default function FileDetailsPage() {
   const PANEL_TYPE_SECTIONS: Record<string, string[]> = {
     roof: ['RPSheathing','RPPartList'],
     floor: ['FPConnectors','FPPartList','FPSheathing'],
-    wall: ['WPConnectors','WPFramingTL','WPPartList','WPSheathing'],
+    wall: ['WPScheduleA','WPScheduleB'], // limit to schedules for wall in this view
   };
   function detectPanelType(data: any): 'roof' | 'floor' | 'wall' | null {
     const label: string = (data?.panellabel || '').toString().toLowerCase();
@@ -610,7 +657,7 @@ export default function FileDetailsPage() {
   const sectionOrder = [
     'documentProperties',
     'componentDetails',
-    ...allowedDynamicSections,
+    ...(panelType==='wall' ? ['WPScheduleA','WPScheduleB'] : allowedDynamicSections),
     'timestamps',
   ];
 
@@ -643,6 +690,10 @@ export default function FileDetailsPage() {
     WPFramingTL: ['type', 'totallength', 'count'],
     WPPartList: ['size', 'label', 'count', 'cutlength'],
     WPSheathing: ['panel', 'area', 'panelcount', '4x8panelcount'],
+    WPScheduleA: ['field1','field2','field3','field4','field5'],
+    WPScheduleB: ['field1','field2','field3','field4','field5'],
+    FPScheduleA: ['field1','field2','field3','field4','field5'],
+    FPScheduleB: ['field1','field2','field3','field4','field5'],
   };
 
   function normalizeKey(k: string): string {
@@ -833,7 +884,8 @@ export default function FileDetailsPage() {
           data: { ...editableData, panellabel: editableData.panellabel },
           stagingId: id,
           overrideComponentId: opts.overrideComponentId,
-          overwriteProduction: opts.overwriteProduction || false
+          overwriteProduction: opts.overwriteProduction || false,
+          user: 'system'
         }),
       });
       if (!response.ok) {
@@ -860,7 +912,7 @@ export default function FileDetailsPage() {
     if (!confirm('Reject this staging record?')) return;
     setDupActionBusy('reject');
     try {
-      const resp = await fetch(`/api/staging-data/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawData: editableData, status: 'rejected' }) });
+      const resp = await fetch(`/api/staging-data/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawData: editableData, status: 'rejected', user: 'system' }) });
       if (!resp.ok) throw new Error('Reject failed');
       pushToast('Rejected', 'success');
       setShowDupModal(false);

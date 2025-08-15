@@ -28,6 +28,11 @@ export const PANEL_SECTION_CONFIGS: Record<string, SectionConfig> = {
   WPFramingTL: { requiredKeys: ['key_0','key_1','key_2'] },
   WPPartList: { requiredKeys: ['key_0','key_1','key_2','key_3'] },
   WPSheathing: { requiredKeys: ['key_0','key_1','key_2'] },
+  // Updated schedule definitions
+  WPScheduleA: { requiredKeys: ['key_0','key_1','key_2','key_3','key_4'] },
+  WPScheduleB: { requiredKeys: ['key_0','key_1'] },
+  FPScheduleA: { requiredKeys: ['key_0','key_1','key_2','key_3','key_4'] },
+  FPScheduleB: { requiredKeys: ['key_0','key_1','key_2','key_3','key_4'] },
   timestamps: { requiredKeys: ['key_0','key_1'] },
 };
 
@@ -44,7 +49,7 @@ export function detectPanelType(raw: any): PanelType | null {
 const PANEL_TYPE_EXPECTED: Record<PanelType, string[]> = {
   roof: ['RPSheathing','RPPartList','timestamps'],
   floor: ['FPConnectors','FPPartList','FPSheathing','timestamps'],
-  wall: ['WPConnectors','WPFramingTL','WPPartList','WPSheathing','timestamps'],
+  wall: ['WPScheduleA','WPScheduleB','timestamps'], // narrowed per UI requirement: only schedule sections + timestamps
 };
 
 export function computeSectionScore(rows: any[], cfg: SectionConfig): number {
